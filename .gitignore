@@ -1,0 +1,5 @@
+target
+*.gb
+*.bin
+.DS_Store
+.vscode
