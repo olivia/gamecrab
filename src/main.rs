@@ -43,7 +43,9 @@ enum OpCode {
     RET,
     RETI,
     RET_C(Cond),
+    RES(u8, Register),
     RST(u8),
+    SET(u8, Register),
     STOP,
     SUB(Register),
     SUB_C(Register, Register),
@@ -102,7 +104,9 @@ fn get_arg(start:usize, num:u8, res:&Vec<u8>) -> u16 {
 
 fn get_cb(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
     match y[start + 1] {
-        0x7C => (2, OpCode::BIT(7, Register::H), 8),
+        b @ 0x40...0x7F => (2, OpCode::BIT((b - 0x40) / 8, lookup_mod_register(b)), 8 * lookup_mod_mult(b)),
+        b @ 0x80...0xBF => (2, OpCode::RES((b - 0x80) / 8, lookup_mod_register(b)), 8 * lookup_mod_mult(b)),
+        b @ 0xC0...0xFF => (2, OpCode::SET((b - 0xC0) / 8, lookup_mod_register(b)), 8 * lookup_mod_mult(b)),
         _ => (2, OpCode::ERR(format!("{:0>2X}", y[start])), 0)
     }
 }
@@ -114,6 +118,10 @@ fn lookup_mod_register(b:u8) -> Register {
 
 fn lookup_mod_cycles(b:u8) -> u8 {
   if (b % 8) == 6 { 8 } else { 4 } 
+}
+
+fn lookup_mod_mult(b:u8) -> u8 {
+  if (b % 8) == 6 { 2 } else { 1 } 
 }
 
 fn lookup_LD_R(start:usize, b:u8) -> (usize, OpCode, u8){
