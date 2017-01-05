@@ -240,8 +240,8 @@ fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
         0xF0 => (2, OpCode::LD_R(Register::A, Register::ADDR(0xFF00 + (y[start + 1] as u16))), 12),
         0xC2 => (3, OpCode::JP_C(Cond::NZ, get_arg(start, 3, y)), 16), // 16/12
         0xD2 => (3, OpCode::JP_C(Cond::NC, get_arg(start, 3, y)), 16), // 16/12
-        0xE2 => (2, OpCode::LD_R(Register::CH, Register::A), 8),
-        0xF2 => (2, OpCode::LD_R(Register::A, Register::CH), 8),
+        0xE2 => (1, OpCode::LD_R(Register::CH, Register::A), 8),
+        0xF2 => (1, OpCode::LD_R(Register::A, Register::CH), 8),
         0xC3 => (3, OpCode::JP(get_arg(start, 3, y)), 16), 
         0xF3 => (1, OpCode::DI, 4),
         0xC4 => (3, OpCode::CALL_C(Cond::NZ, Register::ADDR(get_arg(start, 3, y))), 24), // 24/12
