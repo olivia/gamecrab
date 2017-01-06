@@ -170,6 +170,14 @@ fn lookup_LD_R(start:usize, b:u8) -> (usize, OpCode, u8){
   (1, OpCode::LD_R(registers[(idx/8) as usize], lookup_mod_register(b)), cycles) 
 }
 
+fn lookup_mod_op_A(op:fn(Register, Register) -> OpCode, b:u8) -> (usize, OpCode, u8) {
+    (1, op(Register::A, lookup_mod_register(b)), lookup_mod_cycles(b))
+}
+
+fn lookup_mod_op(op:fn(Register) -> OpCode, b:u8) -> (usize, OpCode, u8) {
+    (1, op(lookup_mod_register(b)), lookup_mod_cycles(b))
+}
+
 fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
     let res = match y[start] {
         0x00 => (1, OpCode::NOP, 4),
@@ -253,14 +261,14 @@ fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
         0xCD => (3, OpCode::CALL(Register::ADDR(get_arg(start, 3, y))), 24),
         0x76 => (1, OpCode::HALT, 4), 
         b @ 0x40...0x7F => lookup_LD_R(start, b), //All the registers that use HL have the wrong cycle count
-        b @ 0x80...0x88 => (1, OpCode::ADD(Register::A, lookup_mod_register(b)), lookup_mod_cycles(b)),
-        b @ 0x88...0x8F => (1, OpCode::ADD_C(Register::A, lookup_mod_register(b)), lookup_mod_cycles(b)),
-        b @ 0x90...0x98 => (1, OpCode::SUB(lookup_mod_register(b)), lookup_mod_cycles(b)),
-        b @ 0x98...0x9F => (1, OpCode::SUB_C(Register::A, lookup_mod_register(b)), lookup_mod_cycles(b)),
-        b @ 0xA0...0xA8 => (1, OpCode::AND(lookup_mod_register(b)), lookup_mod_cycles(b)),
-        b @ 0xA8...0xAF => (1, OpCode::XOR(lookup_mod_register(b)), lookup_mod_cycles(b)),
-        b @ 0xB0...0xB8 => (1, OpCode::OR(lookup_mod_register(b)), lookup_mod_cycles(b)),
-        b @ 0xB8...0xBF => (1, OpCode::CP(lookup_mod_register(b)), lookup_mod_cycles(b)),
+        b @ 0x80...0x88 => lookup_mod_op_A(OpCode::ADD, b),
+        b @ 0x88...0x8F => lookup_mod_op_A(OpCode::ADD_C, b),
+        b @ 0x90...0x98 => lookup_mod_op(OpCode::SUB, b),
+        b @ 0x98...0x9F => lookup_mod_op_A(OpCode::SUB_C, b),
+        b @ 0xA0...0xA8 => lookup_mod_op(OpCode::AND, b),
+        b @ 0xA8...0xAF => lookup_mod_op(OpCode::XOR, b),
+        b @ 0xB0...0xB8 => lookup_mod_op(OpCode::OR, b),
+        b @ 0xB8...0xBF => lookup_mod_op(OpCode::CP, b),
         0xC0 => (1, OpCode::RET_C(Cond::NZ), 8), // actually 20/8
         0xD0 => (1, OpCode::RET_C(Cond::NC), 8), // actually 20/8
         0xC1 => (1, OpCode::POP(Register::BC), 12),
@@ -310,7 +318,8 @@ static mut sp: u16 = 0;
 static mut pc: u16 = 0;
 
 fn main() {
-    let mut f = File::open("DMG_ROM.bin").unwrap();
+//    let mut f = File::open("DMG_ROM.bin").unwrap();
+    let mut f = File::open("kirby.gb").unwrap();
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer).ok();
     let mut next_addr = 0;
