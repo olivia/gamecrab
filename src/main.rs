@@ -118,7 +118,7 @@ enum Register {
     HL,
     HLP,
     HLM,
-    ADDR(u16), 
+    ADDR(u16),
     SP, // Stack Pointer
     SP_OFF(i8), // stack pointer + offset
     PC // Program Counter
@@ -128,7 +128,7 @@ fn get_arg(start:usize, num:u8, res:&Vec<u8>) -> u16 {
     match num {
         3 => ((res[start + 2] as u16) << 8) + (res[start + 1] as u16) ,
         _ => 0
-    } 
+    }
 }
 
 fn get_cb(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
@@ -155,19 +155,19 @@ fn lookup_mod_register(b:u8) -> Register {
 }
 
 fn lookup_mod_cycles(b:u8) -> u8 {
-  if (b % 8) == 6 { 8 } else { 4 } 
+  if (b % 8) == 6 { 8 } else { 4 }
 }
 
 fn lookup_mod_mult(b:u8) -> u8 {
-  if (b % 8) == 6 { 2 } else { 1 } 
+  if (b % 8) == 6 { 2 } else { 1 }
 }
 
 fn lookup_LD_R(start:usize, b:u8) -> (usize, OpCode, u8){
   let idx = b - 0x40;
   let registers = [Register::B, Register::C, Register::D, Register::E, Register::H, Register::L, Register::HL, Register::A];
   let (left, right) = (registers[(idx/8) as usize], lookup_mod_register(b));
-  let cycles = if (idx / 8) == 6 || (idx % 8) == 6 { 8 } else { 4 }; 
-  (1, OpCode::LD_R(registers[(idx/8) as usize], lookup_mod_register(b)), cycles) 
+  let cycles = if (idx / 8) == 6 || (idx % 8) == 6 { 8 } else { 4 };
+  (1, OpCode::LD_R(registers[(idx/8) as usize], lookup_mod_register(b)), cycles)
 }
 
 fn lookup_mod_op_A(op:fn(Register, Register) -> OpCode, b:u8) -> (usize, OpCode, u8) {
@@ -250,7 +250,7 @@ fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
         0xD2 => (3, OpCode::JP_C(Cond::NC, get_arg(start, 3, y)), 16), // 16/12
         0xE2 => (1, OpCode::LD_R(Register::CH, Register::A), 8),
         0xF2 => (1, OpCode::LD_R(Register::A, Register::CH), 8),
-        0xC3 => (3, OpCode::JP(get_arg(start, 3, y)), 16), 
+        0xC3 => (3, OpCode::JP(get_arg(start, 3, y)), 16),
         0xF3 => (1, OpCode::DI, 4),
         0xC4 => (3, OpCode::CALL_C(Cond::NZ, Register::ADDR(get_arg(start, 3, y))), 24), // 24/12
         0xD4 => (3, OpCode::CALL_C(Cond::NC, Register::ADDR(get_arg(start, 3, y))), 24), // 24/12
@@ -259,7 +259,7 @@ fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
         0xCC => (3, OpCode::CALL_C(Cond::Z, Register::ADDR(get_arg(start, 3, y))), 24), // 24/12
         0xDC => (3, OpCode::CALL_C(Cond::C, Register::ADDR(get_arg(start, 3, y))), 24), // 24/12
         0xCD => (3, OpCode::CALL(Register::ADDR(get_arg(start, 3, y))), 24),
-        0x76 => (1, OpCode::HALT, 4), 
+        0x76 => (1, OpCode::HALT, 4),
         b @ 0x40...0x7F => lookup_LD_R(start, b), //All the registers that use HL have the wrong cycle count
         b @ 0x80...0x88 => lookup_mod_op_A(OpCode::ADD, b),
         b @ 0x88...0x8F => lookup_mod_op_A(OpCode::ADD_C, b),
@@ -312,12 +312,44 @@ fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
     res
 }
 
-// Representing A, F, B, C, D, E, H, L in that order
-static mut byte_registers: [u8; 8] = [0;8];
-static mut sp: u16 = 0;
-static mut pc: u16 = 0;
+
+fn exec_instr(op: OpCode, curr_addr: usize, cpu: Cpu) -> usize {
+    use OpCode::*;
+    match op {
+        JP(addr) => addr as usize,
+        JP_HL => read_multi_register(Register::HL, cpu) as usize,
+        NOP => curr_addr,
+        _ => 0
+    }
+}
+
+fn read_multi_register(reg: Register, cpu: Cpu) -> u16 {
+   use Register::*;
+   match reg {
+       HL => ((cpu.H as u16) << 8)  + (cpu.L as u16),
+       AF => ((cpu.A as u16) << 8)  + (cpu.F as u16),
+       BC => ((cpu.B as u16) << 8)  + (cpu.C as u16),
+       DE => ((cpu.D as u16) << 8)  + (cpu.E as u16),
+       _ => 0
+   } 
+}
+
+struct Cpu {
+    A: u8,
+    B: u8,
+    C: u8,
+    D: u8,
+    E: u8,
+    F: u8,
+    H: u8,
+    L: u8,
+    SP: u16,
+    PC: u16
+}
 
 fn main() {
+    // Representing A, F, B, C, D, E, H, L in that order
+    let mut cpu = Cpu { A: 0, B: 0, C:0, D:0, E:0, F:0, H:0, L:0, SP:0, PC: 0};
 //    let mut f = File::open("DMG_ROM.bin").unwrap();
     let mut f = File::open("kirby.gb").unwrap();
     let mut buffer = Vec::new();
@@ -325,7 +357,7 @@ fn main() {
     let mut next_addr = 0;
     for _ in 1..256 {
         let (op_length, instr, cycles) = lookup_op(next_addr, &buffer);
-        println!("Address {:4>0X}: {:?}", next_addr, instr); 
+        println!("Address {:4>0X}: {:?}", next_addr, instr);
         next_addr += op_length;
     }
 }
