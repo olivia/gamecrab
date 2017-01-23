@@ -1,128 +1,9 @@
+extern crate rustgirl;
 use std::io::prelude::*;
 use std::fs::File;
+use rustgirl::register::*;
+use rustgirl::opcode::*;
 
-#[derive(Debug)]
-enum B {
-    One(u8),
-    Two(u16)
-}
-
-#[derive(Debug)]
-enum Cond {
-    NZ,
-    Z,
-    NC,
-    C
-}
-
-#[derive(Debug)]
-enum OpCode {
-    ADD(Register, Register),
-    ADD_d8(Register, u8),
-    ADD_r8(Register, i8),
-    ADD_C_d8(Register, u8),
-    ADD_C(Register, Register),
-    AND(Register),
-    AND_d8(u8),
-    BIT(u8, Register),
-    CALL(Register),
-    CALL_C(Cond, Register),
-    CP(Register),
-    CP_d8(u8),
-    CPL,
-    CCF,
-    DEC(Register),
-    DEC_F(Register),
-    DI,
-    EI,
-    ERR(String),
-    HALT,
-    INC(Register),
-    INC_F(Register),
-    JP(u16),
-    JP_HL,
-    JP_C(Cond, u16),
-    JR(i8),
-    JR_C(Cond, i8),
-    LD(Register, B),
-    LD_R(Register, Register),
-    NOP,
-    OR(Register),
-    OR_d8(u8),
-    POP(Register),
-    PUSH(Register),
-    RET,
-    RETI,
-    RET_C(Cond),
-    RES(u8, Register),
-    RLC(Register),
-    RLCA,
-    RRC(Register),
-    RRCA,
-    RL(Register),
-    RLA,
-    RR(Register),
-    RRA,
-    DAA,
-    SLA(Register),
-    SRA(Register),
-    SWAP(Register),
-    SRL(Register),
-    SCF,
-    RST(u8),
-    SET(u8, Register),
-    STOP,
-    SUB(Register),
-    SUB_d8(u8),
-    SUB_C(Register, Register),
-    SUB_C_d8(Register, u8),
-    XOR(Register),
-    XOR_d8(u8)
-}
-
-//struct ROpCode<A> {
-//    nop: fn(i32) -> A,
-//    jp: fn(i32) -> A,
-//    jr_nz: fn(u8, i32) -> A
-//}
-//
-//fn interp_op<A>(start: usize, y: &Vec<u8>, interp: ROpCode<A>) -> (usize, A) {
-//    match y[start] {
-//        0x00 => (start + 1, interp.nop(4))
-//        0x20 => (2 + start, interp.jr_nz(y[start+1], 8))
-//    }
-//}
-//
-//fn runner_thingy() {
-//    let interp: ROpCode<str> = ROpCode {
-//        nop: {|c| "NOP"},
-//        jp: {|c| "JP"},
-//        jr_nz: {|u, c| "JRNZ"}
-//    }
-//}
-//
-#[derive(Debug, Copy, Clone)]
-enum Register {
-    A,
-    B,
-    C,
-    CH, //$FF00+C
-    D,
-    E,
-    F,
-    H,
-    L,
-    AF,
-    BC,
-    DE,
-    HL,
-    HLP,
-    HLM,
-    ADDR(u16),
-    SP, // Stack Pointer
-    SP_OFF(i8), // stack pointer + offset
-    PC // Program Counter
-}
 
 fn get_arg(start:usize, num:u8, res:&Vec<u8>) -> u16 {
     match num {
@@ -314,7 +195,7 @@ fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
 
 
 fn exec_instr(op: OpCode, curr_addr: usize, cpu: Cpu) -> usize {
-    use OpCode::*;
+    use rustgirl::opcode::OpCode::*;
     match op {
         JP(addr) => addr as usize,
         JP_HL => read_multi_register(Register::HL, cpu) as usize,
@@ -324,7 +205,7 @@ fn exec_instr(op: OpCode, curr_addr: usize, cpu: Cpu) -> usize {
 }
 
 fn read_multi_register(reg: Register, cpu: Cpu) -> u16 {
-   use Register::*;
+   use rustgirl::register::Register::*;
    match reg {
        HL => ((cpu.H as u16) << 8)  + (cpu.L as u16),
        AF => ((cpu.A as u16) << 8)  + (cpu.F as u16),
