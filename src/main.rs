@@ -31,7 +31,7 @@ fn get_cb(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
 }
 
 fn lookup_mod_register(b:u8) -> Register {
-  let registers = [Register::B, Register::C, Register::D, Register::E, Register::H, Register::L, Register::HL, Register::A];
+  let registers = [Register::B, Register::C, Register::D, Register::E, Register::H, Register::L, Register::HL_ADDR, Register::A];
   registers[(b % 8) as usize]
 }
 
@@ -45,10 +45,10 @@ fn lookup_mod_mult(b:u8) -> u8 {
 
 fn lookup_LD_R(start:usize, b:u8) -> (usize, OpCode, u8){
   let idx = b - 0x40;
-  let registers = [Register::B, Register::C, Register::D, Register::E, Register::H, Register::L, Register::HL, Register::A];
+  let registers = [Register::B, Register::C, Register::D, Register::E, Register::H, Register::L, Register::HL_ADDR, Register::A];
   let (left, right) = (registers[(idx/8) as usize], lookup_mod_register(b));
   let cycles = if (idx / 8) == 6 || (idx % 8) == 6 { 8 } else { 4 };
-  (1, OpCode::LD_R(registers[(idx/8) as usize], lookup_mod_register(b)), cycles)
+  (1, OpCode::LD_R(left, right), cycles)
 }
 
 fn lookup_mod_op_a(op:fn(Register, Register) -> OpCode, b:u8) -> (usize, OpCode, u8) {
