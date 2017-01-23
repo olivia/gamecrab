@@ -11,6 +11,8 @@ pub enum Register {
     L,
     AF,
     BC,
+    BC_ADDR,
+    DE_ADDR,
     DE,
     HL,
     HL_ADDR,
