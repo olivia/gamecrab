@@ -1,12 +1,6 @@
 use register::*;
 
 #[derive(Debug)]
-pub enum B {
-    One(u8),
-    Two(u16)
-}
-
-#[derive(Debug)]
 pub enum Cond {
     NZ,
     Z,
@@ -43,7 +37,8 @@ pub enum OpCode {
     JP_C(Cond, u16),
     JR(i8),
     JR_C(Cond, i8),
-    LD(Register, B),
+    LD(Register, u8),
+    LD_M(Register, u16),
     LD_R(Register, Register),
     NOP,
     OR(Register),

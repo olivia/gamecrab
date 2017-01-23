@@ -51,7 +51,7 @@ fn lookup_LD_R(start:usize, b:u8) -> (usize, OpCode, u8){
   (1, OpCode::LD_R(registers[(idx/8) as usize], lookup_mod_register(b)), cycles)
 }
 
-fn lookup_mod_op_A(op:fn(Register, Register) -> OpCode, b:u8) -> (usize, OpCode, u8) {
+fn lookup_mod_op_a(op:fn(Register, Register) -> OpCode, b:u8) -> (usize, OpCode, u8) {
     (1, op(Register::A, lookup_mod_register(b)), lookup_mod_cycles(b))
 }
 
@@ -65,10 +65,10 @@ fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
         0x10 => (2, OpCode::STOP, 4),
         0x20 => (2, OpCode::JR_C(Cond::NZ, y[start + 1] as i8), 12), // 12/8 The first arg should be a signed byte
         0x30 => (2, OpCode::JR_C(Cond::NC, y[start + 1] as i8), 12), //12/8 The first arg should be a signed byte
-        0x01 => (3, OpCode::LD(Register::BC, B::Two(get_arg(start, 3, y))), 12),
-        0x11 => (3, OpCode::LD(Register::DE, B::Two(get_arg(start, 3, y))), 12),
-        0x21 => (3, OpCode::LD(Register::HL, B::Two(get_arg(start, 3, y))), 12),
-        0x31 => (3, OpCode::LD(Register::SP, B::Two(get_arg(start, 3, y))), 12),
+        0x01 => (3, OpCode::LD_M(Register::BC, get_arg(start, 3, y)), 12),
+        0x11 => (3, OpCode::LD_M(Register::DE, get_arg(start, 3, y)), 12),
+        0x21 => (3, OpCode::LD_M(Register::HL, get_arg(start, 3, y)), 12),
+        0x31 => (3, OpCode::LD_M(Register::SP, get_arg(start, 3, y)), 12),
         0x02 => (1, OpCode::LD_R(Register::BC, Register::A), 8),
         0x12 => (1, OpCode::LD_R(Register::DE, Register::A), 8),
         0x22 => (1, OpCode::LD_R(Register::HLP, Register::A), 8),
@@ -85,10 +85,10 @@ fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
         0x15 => (1, OpCode::DEC_F(Register::D), 4),
         0x25 => (1, OpCode::DEC_F(Register::H), 4),
         0x35 => (1, OpCode::DEC_F(Register::HL), 12),
-        0x06 => (2, OpCode::LD(Register::B, B::One(y[start + 1])), 8),
-        0x16 => (2, OpCode::LD(Register::D, B::One(y[start + 1])), 8),
-        0x26 => (2, OpCode::LD(Register::H, B::One(y[start + 1])), 8),
-        0x36 => (2, OpCode::LD(Register::HL, B::One(y[start + 1])), 12),
+        0x06 => (2, OpCode::LD(Register::B, y[start + 1]), 8),
+        0x16 => (2, OpCode::LD(Register::D, y[start + 1]), 8),
+        0x26 => (2, OpCode::LD(Register::H, y[start + 1]), 8),
+        0x36 => (2, OpCode::LD(Register::HL_ADDR, y[start + 1]), 12),
         0x07 => (1, OpCode::RLCA, 4),
         0x17 => (1, OpCode::RLA, 4),
         0x27 => (1, OpCode::DAA, 4),
@@ -113,10 +113,10 @@ fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
         0x1D => (1, OpCode::DEC_F(Register::E), 4),
         0x2D => (1, OpCode::DEC_F(Register::L), 4),
         0x3D => (1, OpCode::DEC_F(Register::A), 4),
-        0x0E => (2, OpCode::LD(Register::C, B::One(y[start + 1])), 8),
-        0x1E => (2, OpCode::LD(Register::E, B::One(y[start + 1])), 8),
-        0x2E => (2, OpCode::LD(Register::L, B::One(y[start + 1])), 8),
-        0x3E => (2, OpCode::LD(Register::A, B::One(y[start + 1])), 8),
+        0x0E => (2, OpCode::LD(Register::C, y[start + 1]), 8),
+        0x1E => (2, OpCode::LD(Register::E, y[start + 1]), 8),
+        0x2E => (2, OpCode::LD(Register::L, y[start + 1]), 8),
+        0x3E => (2, OpCode::LD(Register::A, y[start + 1]), 8),
         0x0F => (1, OpCode::RRCA, 4),
         0x1F => (1, OpCode::RRA, 4),
         0x2F => (1, OpCode::CPL, 4),
@@ -142,10 +142,10 @@ fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
         0xCD => (3, OpCode::CALL(Register::ADDR(get_arg(start, 3, y))), 24),
         0x76 => (1, OpCode::HALT, 4),
         b @ 0x40...0x7F => lookup_LD_R(start, b), //All the registers that use HL have the wrong cycle count
-        b @ 0x80...0x88 => lookup_mod_op_A(OpCode::ADD, b),
-        b @ 0x88...0x8F => lookup_mod_op_A(OpCode::ADD_C, b),
+        b @ 0x80...0x88 => lookup_mod_op_a(OpCode::ADD, b),
+        b @ 0x88...0x8F => lookup_mod_op_a(OpCode::ADD_C, b),
         b @ 0x90...0x98 => lookup_mod_op(OpCode::SUB, b),
-        b @ 0x98...0x9F => lookup_mod_op_A(OpCode::SUB_C, b),
+        b @ 0x98...0x9F => lookup_mod_op_a(OpCode::SUB_C, b),
         b @ 0xA0...0xA8 => lookup_mod_op(OpCode::AND, b),
         b @ 0xA8...0xAF => lookup_mod_op(OpCode::XOR, b),
         b @ 0xB0...0xB8 => lookup_mod_op(OpCode::OR, b),
@@ -193,25 +193,103 @@ fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
     res
 }
 
+fn exec_ld_m(reg: Register, val: u16, curr_addr: usize, cpu: &mut Cpu) -> usize {
+    use rustgirl::register::Register::*;
+    match reg {
+        _ => { write_multi_register(reg, val, cpu); curr_addr }
+    }
+}
 
-fn exec_instr(op: OpCode, curr_addr: usize, cpu: Cpu) -> usize {
+fn exec_ld(reg: Register, val: u8, curr_addr: usize, cpu: &mut Cpu) -> usize {
+    use rustgirl::register::Register::*;
+    match reg {
+        _ => { write_register(reg, val, cpu); curr_addr }
+    }
+}
+
+fn exec_xor(reg: Register, cpu: &mut Cpu) -> () {
+    use rustgirl::register::Register::*;
+    let reg_a_val = read_register(A, cpu);
+    let reg_val = read_register(reg, cpu);
+    let res = reg_a_val^reg_val;
+    let res_f = (if res == 0 { 1 } else { 0 }) << 7;
+
+    match reg {
+        _ => { 
+            write_register(A, res, cpu);
+            write_register(F, res_f, cpu);
+        }
+    }
+}
+
+
+fn exec_instr(op: OpCode, curr_addr: usize, cpu: &mut Cpu) -> usize {
+    use rustgirl::register::Register::*;
     use rustgirl::opcode::OpCode::*;
     match op {
         JP(addr) => addr as usize,
         JP_HL => read_multi_register(Register::HL, cpu) as usize,
         NOP => curr_addr,
-        _ => 0
+        XOR(reg) => { exec_xor(reg, cpu); curr_addr },
+        LD(reg, val) => exec_ld(reg, val, curr_addr, cpu),
+        LD_M(reg, val) => exec_ld_m(reg, val, curr_addr, cpu),
+        _ => unreachable!()
     }
 }
 
-fn read_multi_register(reg: Register, cpu: Cpu) -> u16 {
+fn write_multi_register(reg: Register, val: u16, cpu: &mut Cpu) -> () {
+   use rustgirl::register::Register::*;
+   let (l_byte, r_byte) = ((val >> 8) as u8, (0x0F & val) as u8);
+   match reg {
+       HL => { cpu.H = l_byte; cpu.L = r_byte; },
+       AF => { cpu.A = l_byte; cpu.F = r_byte; },
+       BC => { cpu.B = l_byte; cpu.C = r_byte; },
+       DE => { cpu.D = l_byte; cpu.E = r_byte; },
+       SP => cpu.SP = val,
+       _ => unreachable!()
+   };
+}
+
+fn read_register(reg: Register, cpu: &mut Cpu) -> u8 {
+   use rustgirl::register::Register::*;
+   match reg {
+       A => cpu.A,
+       B => cpu.B,
+       C => cpu.C,
+       D => cpu.D,
+       E => cpu.E,
+       F => cpu.F,
+       H => cpu.H,
+       L => cpu.L,
+       _ => unreachable!()
+   } 
+}
+
+fn write_register(reg: Register, val: u8, cpu: &mut Cpu) -> () {
+   use rustgirl::register::Register::*;
+   match reg {
+       A => cpu.A = val,
+       B => cpu.B = val,
+       C => cpu.C = val,
+       D => cpu.D = val,
+       E => cpu.E = val,
+       F => cpu.F = val,
+       H => cpu.H = val,
+       L => cpu.L = val,
+       _ => unreachable!()
+   } 
+}
+
+fn read_multi_register(reg: Register, cpu: &mut Cpu) -> u16 {
    use rustgirl::register::Register::*;
    match reg {
        HL => ((cpu.H as u16) << 8)  + (cpu.L as u16),
        AF => ((cpu.A as u16) << 8)  + (cpu.F as u16),
        BC => ((cpu.B as u16) << 8)  + (cpu.C as u16),
        DE => ((cpu.D as u16) << 8)  + (cpu.E as u16),
-       _ => 0
+       SP => cpu.SP,
+       PC => cpu.PC,
+       _ => unreachable!()
    } 
 }
 
@@ -231,8 +309,8 @@ struct Cpu {
 fn main() {
     // Representing A, F, B, C, D, E, H, L in that order
     let mut cpu = Cpu { A: 0, B: 0, C:0, D:0, E:0, F:0, H:0, L:0, SP:0, PC: 0};
-//    let mut f = File::open("DMG_ROM.bin").unwrap();
-    let mut f = File::open("kirby.gb").unwrap();
+    let mut f = File::open("DMG_ROM.bin").unwrap();
+//    let mut f = File::open("kirby.gb").unwrap();
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer).ok();
     let mut next_addr = 0;
@@ -240,5 +318,6 @@ fn main() {
         let (op_length, instr, cycles) = lookup_op(next_addr, &buffer);
         println!("Address {:4>0X}: {:?}", next_addr, instr);
         next_addr += op_length;
+        next_addr = exec_instr(instr, next_addr, &mut cpu);
     }
 }
