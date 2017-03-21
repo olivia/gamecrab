@@ -4,6 +4,13 @@ use std::fs::File;
 use rustgirl::register::*;
 use rustgirl::opcode::*;
 
+#[derive(Debug)]
+pub enum Flag {
+    Z,
+    N,
+    H,
+    C
+}
 
 fn get_arg(start:usize, num:u8, res:&Vec<u8>) -> u16 {
     match num {
@@ -122,8 +129,8 @@ fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
         0x1F => (1, RRA, 4),
         0x2F => (1, CPL, 4),
         0x3F => (1, CCF, 4),
-        0x0A => (1, LD_R(Register::A, Register::BC), 8),
-        0x1A => (1, LD_R(Register::A, Register::DE), 8),
+        0x0A => (1, LD_R(Register::A, Register::BC_ADDR), 8),
+        0x1A => (1, LD_R(Register::A, Register::DE_ADDR), 8),
         0x2A => (1, LD_R(Register::A, Register::HLP), 8),
         0x3A => (1, LD_R(Register::A, Register::HLM), 8),
         0xE0 => (2, LD_R(Register::ADDR(0xFF00 + (y[start + 1] as u16)), Register::A), 12),
@@ -206,6 +213,58 @@ fn exec_ld(reg: Register, val: u8, curr_addr: usize, cpu: &mut Cpu) -> usize {
     }
 }
 
+fn exec_ld_r(to_reg: Register,  from_reg: Register, curr_addr: usize, cpu: &mut Cpu) -> usize {
+    match (to_reg, from_reg) {
+        (Register::HLP, _) | (Register::HLM, _) => { 
+            let hl = read_multi_register(Register::HL, cpu);
+            let new_hl = match to_reg { Register::HLP => hl + 1, _ => hl - 1 };
+            write_register(Register::HL_ADDR, read_register(from_reg, cpu), cpu); 
+            write_multi_register(Register::HL, new_hl, cpu); 
+            curr_addr 
+        },
+        (Register::CH, _) => {
+            write_register(to_reg, read_register(from_reg, cpu), cpu);
+            curr_addr 
+        }
+        _ => { 
+            write_register(to_reg, read_register(from_reg, cpu), cpu); 
+            curr_addr 
+        }
+    }
+}
+
+fn exec_bit(bit: u8, reg: Register, cpu: &mut Cpu) -> () {
+    set_flag(Flag::H, cpu);
+    reset_flag(Flag::N, cpu);
+    if read_register(reg, cpu) & (1 << bit) == 0 { 
+        set_flag(Flag::Z, cpu) 
+    } else { 
+        reset_flag(Flag::Z, cpu) 
+    }
+}
+
+fn reset_flag(flag: Flag, cpu: &mut Cpu) -> () {
+    write_register(Register::F, read_register(Register::F, cpu) & (255 - flag_bit(flag)), cpu);
+}
+
+fn flag_is_set(flag: Flag, cpu: &mut Cpu) -> bool {
+    read_register(Register::F, cpu) & flag_bit(flag) != 0 
+}
+
+fn flag_bit(flag: Flag) -> u8 {
+    use Flag::*;
+    1 << match flag {
+       Z => 7, 
+       N => 6,
+       H => 5,
+       C => 4
+    }
+}
+
+fn set_flag(flag: Flag, cpu: &mut Cpu) -> () {
+    write_register(Register::F, read_register(Register::F, cpu) | flag_bit(flag), cpu);
+}
+
 fn exec_xor(reg: Register, cpu: &mut Cpu) -> () {
     use rustgirl::register::Register::*;
     let reg_a_val = read_register(A, cpu);
@@ -213,14 +272,19 @@ fn exec_xor(reg: Register, cpu: &mut Cpu) -> () {
     let res = reg_a_val^reg_val;
     let res_f = (if res == 0 { 1 } else { 0 }) << 7;
 
-    match reg {
-        _ => { 
-            write_register(A, res, cpu);
-            write_register(F, res_f, cpu);
-        }
-    }
+    write_register(A, res, cpu);
+    write_register(F, res_f, cpu);
 }
 
+fn test_cond(cond: Cond, cpu: &mut Cpu) -> bool{
+   use rustgirl::opcode::Cond::*;
+   match cond {
+       Z => flag_is_set(Flag::Z, cpu),
+       NZ => !flag_is_set(Flag::Z, cpu),
+       C => flag_is_set(Flag::C, cpu),
+       NC => !flag_is_set(Flag::C, cpu)
+   } 
+}
 
 fn exec_instr(op: OpCode, curr_addr: usize, cpu: &mut Cpu) -> usize {
     use rustgirl::opcode::OpCode::*;
@@ -231,13 +295,52 @@ fn exec_instr(op: OpCode, curr_addr: usize, cpu: &mut Cpu) -> usize {
         XOR(reg) => { exec_xor(reg, cpu); curr_addr },
         LD(reg, val) => exec_ld(reg, val, curr_addr, cpu),
         LD_M(reg, val) => exec_ld_m(reg, val, curr_addr, cpu),
+        LD_R(to_reg, from_reg) => exec_ld_r(to_reg, from_reg, curr_addr, cpu),
+        BIT(bit, reg) => { exec_bit(bit, reg, cpu); curr_addr },
+        JR_C(cond, offset) => if test_cond(cond, cpu) { (curr_addr as i16 + offset as i16) as usize } else { curr_addr },
+        DEC_F(reg) => { exec_dec_u8(reg, cpu); curr_addr },
+        DEC(reg) => { exec_dec_u16(reg, cpu); curr_addr },
+        INC_F(reg) => { exec_inc_u8(reg, cpu); curr_addr },
+        INC(reg) => { exec_inc_u16(reg, cpu); curr_addr },
         _ => unreachable!()
     }
 }
 
+fn exec_inc_u8(reg: Register, cpu: &mut Cpu) {
+  let reg_val = read_register(reg, cpu);
+  let res = reg_val.wrapping_add(1);
+  if res == 0 { set_flag(Flag::Z, cpu) };
+  if (reg_val & 0b00001000) != 0 && (res & 0b00001000) == 0 {
+      set_flag(Flag::H, cpu)
+  } else { 
+      reset_flag(Flag::H, cpu) 
+  }
+  reset_flag(Flag::N, cpu);
+} 
+
+fn exec_inc_u16(reg: Register, cpu: &mut Cpu) {
+  write_multi_register(reg, read_multi_register(reg, cpu).wrapping_add(1), cpu);
+}
+
+fn exec_dec_u8(reg: Register, cpu: &mut Cpu) {
+  let reg_val = read_register(reg, cpu);
+  let res = reg_val.wrapping_sub(1);
+  if res == 0 { set_flag(Flag::Z, cpu) };
+  if (reg_val & 0b00001000) == 0 && (res & 0b00001000) != 0 {
+      reset_flag(Flag::H, cpu) 
+  } else { 
+      set_flag(Flag::H, cpu)
+  }
+  set_flag(Flag::N, cpu);
+} 
+
+fn exec_dec_u16(reg: Register, cpu: &mut Cpu) {
+  write_multi_register(reg, read_multi_register(reg, cpu).wrapping_sub(1), cpu);
+}
+
 fn write_multi_register(reg: Register, val: u16, cpu: &mut Cpu) -> () {
    use rustgirl::register::Register::*;
-   let (l_byte, r_byte) = ((val >> 8) as u8, (0x0F & val) as u8);
+   let (l_byte, r_byte) = ((val >> 8) as u8, (0x00FF & val) as u8);
    match reg {
        HL => { cpu.h = l_byte; cpu.l = r_byte; },
        AF => { cpu.a = l_byte; cpu.f = r_byte; },
@@ -259,6 +362,10 @@ fn read_register(reg: Register, cpu: &mut Cpu) -> u8 {
        F => cpu.f,
        H => cpu.h,
        L => cpu.l,
+       CH => read_address(0xFF00 + read_register(C, cpu) as usize, cpu),
+       HL_ADDR => read_address(read_multi_register(HL, cpu) as usize, cpu),
+       BC_ADDR => read_address(read_multi_register(BC, cpu) as usize, cpu),
+       DE_ADDR => read_address(read_multi_register(DE, cpu) as usize, cpu),
        _ => unreachable!()
    } 
 }
@@ -274,8 +381,21 @@ fn write_register(reg: Register, val: u8, cpu: &mut Cpu) -> () {
        F => cpu.f = val,
        H => cpu.h = val,
        L => cpu.l = val,
+       CH => write_address((0xFF00 + read_register(C, cpu)) as usize, val, cpu),
+       HL_ADDR =>  write_address(read_multi_register(HL, cpu) as usize, val, cpu),
+       BC_ADDR =>  write_address(read_multi_register(BC, cpu) as usize, val, cpu),
+       DE_ADDR =>  write_address(read_multi_register(DE, cpu) as usize, val, cpu),
+       ADDR(address) =>  write_address(address as usize, val, cpu),
        _ => unreachable!()
    } 
+}
+
+fn write_address(address: usize, val: u8, cpu: &mut Cpu) -> () { 
+    cpu.memory[address] = val;
+}
+
+fn read_address(address: usize, cpu: &mut Cpu) -> u8 { 
+    cpu.memory[address]
 }
 
 fn read_multi_register(reg: Register, cpu: &mut Cpu) -> u16 {
@@ -301,18 +421,24 @@ struct Cpu {
     h: u8,
     l: u8,
     sp: u16,
-    pc: u16
+    pc: u16,
+    memory: [u8; 0x10000]
+}
+
+impl Default for Cpu {
+    fn default() -> Cpu { 
+        Cpu { a: 0, b: 0, c:0, d:0, e:0, f:0, h:0, l:0, sp:0, pc: 0, memory: [0; 0x10000] }
+    }
 }
 
 fn main() {
     // Representing A, F, B, C, D, E, H, L in that order
-    let mut cpu = Cpu { a: 0, b: 0, c:0, d:0, e:0, f:0, h:0, l:0, sp:0, pc: 0};
+    let mut cpu : Cpu = Default::default();
     let mut f = File::open("DMG_ROM.bin").unwrap();
-//    let mut f = File::open("kirby.gb").unwrap();
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer).ok();
     let mut next_addr = 0;
-    for _ in 1..256 {
+    for _ in 1..102400 {
         let (op_length, instr, cycles) = lookup_op(next_addr, &buffer);
         println!("Address {:4>0X}: {:?} taking {:?} cycles", next_addr, instr, cycles);
         next_addr += op_length;
