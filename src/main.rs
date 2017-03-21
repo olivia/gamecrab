@@ -141,13 +141,13 @@ fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
         0xF2 => (1, LD_R(Register::A, Register::CH), 8),
         0xC3 => (3, JP(get_arg(start, 3, y)), 16),
         0xF3 => (1, DI, 4),
-        0xC4 => (3, CALL_C(Cond::NZ, Register::ADDR(get_arg(start, 3, y))), 24), // 24/12
-        0xD4 => (3, CALL_C(Cond::NC, Register::ADDR(get_arg(start, 3, y))), 24), // 24/12
+        0xC4 => (3, CALL_C(Cond::NZ, get_arg(start, 3, y)), 24), // 24/12
+        0xD4 => (3, CALL_C(Cond::NC, get_arg(start, 3, y)), 24), // 24/12
         0xCB => get_cb(start, y),
         0xFB => (1, EI, 4),
-        0xCC => (3, CALL_C(Cond::Z, Register::ADDR(get_arg(start, 3, y))), 24), // 24/12
-        0xDC => (3, CALL_C(Cond::C, Register::ADDR(get_arg(start, 3, y))), 24), // 24/12
-        0xCD => (3, CALL(Register::ADDR(get_arg(start, 3, y))), 24),
+        0xCC => (3, CALL_C(Cond::Z, get_arg(start, 3, y)), 24), // 24/12
+        0xDC => (3, CALL_C(Cond::C, get_arg(start, 3, y)), 24), // 24/12
+        0xCD => (3, CALL(get_arg(start, 3, y)), 24),
         0x76 => (1, HALT, 4),
         b @ 0x40...0x7F => lookup_ld_r(b), //All the registers that use HL have the wrong cycle count
         b @ 0x80...0x88 => lookup_mod_op_a(ADD, b),
@@ -302,8 +302,46 @@ fn exec_instr(op: OpCode, curr_addr: usize, cpu: &mut Cpu) -> usize {
         DEC(reg) => { exec_dec_u16(reg, cpu); curr_addr },
         INC_F(reg) => { exec_inc_u8(reg, cpu); curr_addr },
         INC(reg) => { exec_inc_u16(reg, cpu); curr_addr },
+        CALL(reg_addr) => { stack_push(curr_addr as u16, cpu); reg_addr as usize },
+        CALL_C(cond, reg_addr) => if test_cond(cond, cpu) { stack_push(curr_addr as u16, cpu); reg_addr as usize } else { curr_addr },
+        PUSH(reg) => { stack_push(read_multi_register(reg, cpu), cpu); curr_addr },
+        POP(reg) => { write_multi_register(reg, stack_pop(cpu), cpu); curr_addr },
+        RL(reg) => { exec_rl(reg, cpu); curr_addr },
+        RLC(reg) => { exec_rlc(reg, cpu); curr_addr },
+        RLA => { exec_rl(Register::A, cpu); curr_addr },
+        RLCA => { exec_rlc(Register::A, cpu); curr_addr },
+        RET => { stack_pop(cpu) as usize },
+        CP(reg) => { exec_cp(read_register(reg, cpu), cpu); curr_addr },
+        CP_d8(num) => { exec_cp(num, cpu); curr_addr },
         _ => unreachable!()
     }
+}
+
+fn exec_cp(num: u8, cpu: &mut Cpu) {
+    let a_val = cpu.a;
+    set_flag(Flag::N, cpu);
+    if a_val == num { set_flag(Flag::Z, cpu) } else { reset_flag(Flag::Z, cpu) }
+    if (a_val & 0x0F) < (num & 0x0F) { set_flag(Flag::H, cpu) } else { reset_flag(Flag::H, cpu) }
+    if a_val < num { set_flag(Flag::C, cpu) } else { reset_flag(Flag::C, cpu) }
+}
+
+fn exec_rl(reg: Register, cpu: &mut Cpu) {
+    let old_c_bit = (read_register(Register::F, cpu) & flag_bit(Flag::C)) >> 4; 
+    let new_c_bit = (read_register(reg, cpu) & 0b10000000) >> 7; 
+    write_register(reg, read_register(reg, cpu) << 1 + old_c_bit, cpu);
+    if read_register(reg, cpu) == 0 { set_flag(Flag::Z, cpu) } else { reset_flag(Flag::Z, cpu) }
+    if new_c_bit == 0 { reset_flag(Flag::C, cpu) } else { set_flag(Flag::C, cpu) }
+    reset_flag(Flag::N, cpu);
+    reset_flag(Flag::H, cpu);
+}
+
+fn exec_rlc(reg: Register, cpu: &mut Cpu) {
+    let new_c_bit = (read_register(reg, cpu) & 0b10000000) >> 7; 
+    write_register(reg, read_register(reg, cpu) << 1 + new_c_bit, cpu);
+    if read_register(reg, cpu) == 0 { set_flag(Flag::Z, cpu) } else { reset_flag(Flag::Z, cpu) }
+    if new_c_bit == 0 { reset_flag(Flag::C, cpu) } else { set_flag(Flag::C, cpu) }
+    reset_flag(Flag::N, cpu);
+    reset_flag(Flag::H, cpu);
 }
 
 fn exec_inc_u8(reg: Register, cpu: &mut Cpu) {
@@ -351,6 +389,20 @@ fn write_multi_register(reg: Register, val: u16, cpu: &mut Cpu) -> () {
    };
 }
 
+fn stack_push(val: u16, cpu: &mut Cpu) -> () {
+  let (l_byte, r_byte) = ((val >> 8) as u8, (0x00FF & val) as u8);
+  cpu.sp -= 2; 
+  cpu.memory[cpu.sp as usize] = r_byte;
+  cpu.memory[(cpu.sp + 1) as usize] = l_byte;
+}
+
+fn stack_pop(cpu: &mut Cpu) -> u16 {
+  let r_byte = cpu.memory[cpu.sp as usize] as u16;
+  let l_byte = cpu.memory[(cpu.sp + 1) as usize] as u16;
+  cpu.sp += 2; 
+  l_byte + r_byte
+}
+
 fn read_register(reg: Register, cpu: &mut Cpu) -> u8 {
    use rustgirl::register::Register::*;
    match reg {
@@ -366,6 +418,7 @@ fn read_register(reg: Register, cpu: &mut Cpu) -> u8 {
        HL_ADDR => read_address(read_multi_register(HL, cpu) as usize, cpu),
        BC_ADDR => read_address(read_multi_register(BC, cpu) as usize, cpu),
        DE_ADDR => read_address(read_multi_register(DE, cpu) as usize, cpu),
+       ADDR(addr) => read_address(addr as usize, cpu),
        _ => unreachable!()
    } 
 }
