@@ -39,11 +39,7 @@ pub fn ld_r(to_reg: Register,  from_reg: Register, curr_addr: usize, cpu: &mut C
 pub fn bit(bit_pos: u8, reg: Register, cpu: &mut Cpu) -> () {
     flag::set(Flag::H, cpu);
     flag::reset(Flag::N, cpu);
-    if read_register(reg, cpu) & (1 << bit_pos) == 0 { 
-        flag::set(Flag::Z, cpu) 
-    } else { 
-        flag::reset(Flag::Z, cpu) 
-    }
+    flag::bool_set(Flag::Z, read_register(reg, cpu) & (1 << bit_pos) == 0, cpu);
 }
 
 pub fn xor(reg: Register, cpu: &mut Cpu) -> () {
@@ -59,17 +55,17 @@ pub fn xor(reg: Register, cpu: &mut Cpu) -> () {
 pub fn cp(num: u8, cpu: &mut Cpu) {
     let a_val = cpu.a;
     flag::set(Flag::N, cpu);
-    if a_val == num { flag::set(Flag::Z, cpu) } else { flag::reset(Flag::Z, cpu) }
-    if (a_val & 0x0F) < (num & 0x0F) { flag::set(Flag::H, cpu) } else { flag::reset(Flag::H, cpu) }
-    if a_val < num { flag::set(Flag::C, cpu) } else { flag::reset(Flag::C, cpu) }
+    flag::bool_set(Flag::Z, a_val == num, cpu);
+    flag::bool_set(Flag::H, (a_val & 0x0F) < (num & 0x0F), cpu);
+    flag::bool_set(Flag::C, a_val < num, cpu);
 }
 
 pub fn rl(reg: Register, cpu: &mut Cpu) {
-    let old_c_bit = (read_register(Register::F, cpu) & flag::flag_bit(Flag::C)) >> 4; 
+    let old_c_bit = if flag::is_set(Flag::C, cpu) { 1 } else { 0 }; 
     let new_c_bit = (read_register(reg, cpu) & 0b10000000) >> 7; 
     write_register(reg, read_register(reg, cpu) << 1 + old_c_bit, cpu);
-    if read_register(reg, cpu) == 0 { flag::set(Flag::Z, cpu) } else { flag::reset(Flag::Z, cpu) }
-    if new_c_bit == 0 { flag::reset(Flag::C, cpu) } else { flag::set(Flag::C, cpu) }
+    flag::bool_set(Flag::Z, read_register(reg, cpu) == 0, cpu);
+    flag::bool_set(Flag::C, new_c_bit != 0, cpu);
     flag::reset(Flag::N, cpu);
     flag::reset(Flag::H, cpu);
 }
@@ -77,8 +73,55 @@ pub fn rl(reg: Register, cpu: &mut Cpu) {
 pub fn rlc(reg: Register, cpu: &mut Cpu) {
     let new_c_bit = (read_register(reg, cpu) & 0b10000000) >> 7; 
     write_register(reg, read_register(reg, cpu) << 1 + new_c_bit, cpu);
-    if read_register(reg, cpu) == 0 { flag::set(Flag::Z, cpu) } else { flag::reset(Flag::Z, cpu) }
-    if new_c_bit == 0 { flag::reset(Flag::C, cpu) } else { flag::set(Flag::C, cpu) }
+    flag::bool_set(Flag::Z, read_register(reg, cpu) == 0, cpu);
+    flag::bool_set(Flag::C, new_c_bit != 0, cpu);
+    flag::reset(Flag::N, cpu);
+    flag::reset(Flag::H, cpu);
+}
+
+pub fn rr(reg: Register, cpu: &mut Cpu) {
+    let old_c_bit = if flag::is_set(Flag::C, cpu) { 1 } else { 0 }; 
+    let new_c_bit = read_register(reg, cpu) & 1; 
+    write_register(reg, read_register(reg, cpu) >> 1 + old_c_bit << 7, cpu);
+    flag::bool_set(Flag::Z, read_register(reg, cpu) == 0, cpu);
+    flag::bool_set(Flag::C, new_c_bit != 0, cpu);
+    flag::reset(Flag::N, cpu);
+    flag::reset(Flag::H, cpu);
+}
+
+pub fn sra(reg: Register, cpu: &mut Cpu) {
+    let new_c_bit = read_register(reg, cpu) & 1; 
+    let msb = read_register(reg, cpu) & 0b10000000; 
+    write_register(reg, (read_register(reg, cpu) >> 1) | msb , cpu);
+    flag::bool_set(Flag::Z, read_register(reg, cpu) == 0, cpu);
+    flag::bool_set(Flag::C, new_c_bit != 0, cpu);
+    flag::reset(Flag::N, cpu);
+    flag::reset(Flag::H, cpu);
+}
+
+pub fn srl(reg: Register, cpu: &mut Cpu) {
+    let lsb = read_register(reg, cpu) & 1; 
+    write_register(reg, read_register(reg, cpu) >> 1, cpu);
+    flag::bool_set(Flag::Z, read_register(reg, cpu) == 0, cpu);
+    flag::bool_set(Flag::C, lsb != 0, cpu);
+    flag::reset(Flag::N, cpu);
+    flag::reset(Flag::H, cpu);
+}
+
+pub fn sla(reg: Register, cpu: &mut Cpu) {
+    let msb = read_register(reg, cpu) & 0b10000000; 
+    write_register(reg, read_register(reg, cpu) << 1, cpu);
+    flag::bool_set(Flag::Z, read_register(reg, cpu) == 0, cpu);
+    flag::bool_set(Flag::C, msb != 0, cpu);
+    flag::reset(Flag::N, cpu);
+    flag::reset(Flag::H, cpu);
+}
+
+pub fn rrc(reg: Register, cpu: &mut Cpu) {
+    let new_c_bit = read_register(reg, cpu) & 1; 
+    write_register(reg, read_register(reg, cpu) >> 1 + new_c_bit << 7, cpu);
+    flag::bool_set(Flag::Z, read_register(reg, cpu) == 0, cpu);
+    flag::bool_set(Flag::C, new_c_bit != 0, cpu);
     flag::reset(Flag::N, cpu);
     flag::reset(Flag::H, cpu);
 }
@@ -86,12 +129,8 @@ pub fn rlc(reg: Register, cpu: &mut Cpu) {
 pub fn inc_u8(reg: Register, cpu: &mut Cpu) {
   let reg_val = read_register(reg, cpu);
   let res = reg_val.wrapping_add(1);
-  if res == 0 { flag::set(Flag::Z, cpu) };
-  if (reg_val & 0b00001000) != 0 && (res & 0b00001000) == 0 {
-      flag::set(Flag::H, cpu)
-  } else { 
-      flag::reset(Flag::H, cpu) 
-  }
+  flag::bool_set(Flag::Z, res == 0, cpu);
+  flag::bool_set(Flag::H, (reg_val & 0b00001000) != 0 && (res & 0b00001000) == 0, cpu);   
   flag::reset(Flag::N, cpu);
 } 
 
@@ -102,17 +141,40 @@ pub fn inc_u16(reg: Register, cpu: &mut Cpu) {
 pub fn dec_u8(reg: Register, cpu: &mut Cpu) {
   let reg_val = read_register(reg, cpu);
   let res = reg_val.wrapping_sub(1);
-  if res == 0 { flag::set(Flag::Z, cpu) };
-  if (reg_val & 0b00001000) == 0 && (res & 0b00001000) != 0 {
-      flag::reset(Flag::H, cpu) 
-  } else { 
-      flag::set(Flag::H, cpu)
-  }
+  flag::bool_set(Flag::Z, res == 0, cpu);
+  flag::bool_set(Flag::H, !((reg_val & 0b00001000) == 0 && (res & 0b00001000) != 0), cpu);   
   flag::set(Flag::N, cpu);
 } 
 
 pub fn dec_u16(reg: Register, cpu: &mut Cpu) {
   write_multi_register(reg, read_multi_register(reg, cpu).wrapping_sub(1), cpu);
+}
+
+pub fn ccf(cpu: &mut Cpu) {
+    flag::reset(Flag::N, cpu);
+    flag::reset(Flag::H, cpu);
+    flag::bool_set(Flag::C, !flag::is_set(Flag::C, cpu), cpu);
+}
+
+pub fn scf(cpu: &mut Cpu) {
+    flag::reset(Flag::N, cpu);
+    flag::reset(Flag::H, cpu);
+    flag::set(Flag::C, cpu);
+}
+
+pub fn cpl(cpu: &mut Cpu) {
+    write_register(Register::A, 0xFF - read_register(Register::A, cpu), cpu);
+    flag::set(Flag::N, cpu);
+    flag::set(Flag::H, cpu);
+}
+
+fn swap(reg: Register, cpu: &mut Cpu) {
+    let reg_val = read_register(reg, cpu);
+    write_register(reg, ((reg_val & 0x0F) << 4) | ((reg_val & 0xF0) >> 4), cpu);
+    flag::bool_set(Flag::Z, reg_val == 0, cpu); 
+    flag::reset(Flag::N, cpu);
+    flag::reset(Flag::H, cpu);
+    flag::reset(Flag::C, cpu);
 }
 
 pub fn exec_instr(op: OpCode, curr_addr: usize, cpu: &mut Cpu) -> usize {
@@ -140,9 +202,20 @@ pub fn exec_instr(op: OpCode, curr_addr: usize, cpu: &mut Cpu) -> usize {
         RLC(reg) => { rlc(reg, cpu); curr_addr },
         RLA => { rl(Register::A, cpu); curr_addr },
         RLCA => { rlc(Register::A, cpu); curr_addr },
+        RR(reg) => { rr(reg, cpu); curr_addr },
+        RRC(reg) => { rrc(reg, cpu); curr_addr },
+        RRA => { rr(Register::A, cpu); curr_addr },
+        RRCA => { rrc(Register::A, cpu); curr_addr },
+        SRA(reg) => { sra(reg, cpu); curr_addr },
+        SLA(reg) => { sla(reg, cpu); curr_addr },
+        SRL(reg) => { srl(reg, cpu); curr_addr },
         RET => { stack_pop(cpu) as usize },
         CP(reg) => { cp(read_register(reg, cpu), cpu); curr_addr },
         CP_d8(num) => { cp(num, cpu); curr_addr },
+        SCF => { scf(cpu); curr_addr },
+        CCF => { ccf(cpu); curr_addr },
+        CPL => { cpl(cpu); curr_addr },
+        SWAP(reg) => { swap(reg, cpu); curr_addr },
         _ => unreachable!()
     }
 }

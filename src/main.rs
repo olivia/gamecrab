@@ -1,13 +1,10 @@
 extern crate rustgirl;
 use std::io::prelude::*;
 use std::fs::File;
-use rustgirl::opcode;
-use rustgirl::cpu::Cpu;
-use rustgirl::instr;
+use rustgirl::{cpu, opcode, instr};
 
 fn main() {
-    // Representing A, F, B, C, D, E, H, L in that order
-    let mut cpu : Cpu = Default::default();
+    let mut cpu : cpu::Cpu = Default::default();
     let mut f = File::open("DMG_ROM.bin").unwrap();
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer).ok();

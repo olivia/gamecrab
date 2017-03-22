@@ -8,6 +8,11 @@ pub enum Flag {
     C
 }
 
+// set if bool is true, reset if false
+pub fn bool_set(flag: Flag, b: bool, cpu: &mut Cpu) {
+    if b { set(flag, cpu) } else { reset(flag, cpu) }
+}
+
 pub fn set(flag: Flag, cpu: &mut Cpu) -> () {
     write_register(Register::F, read_register(Register::F, cpu) | flag_bit(flag), cpu);
 }
