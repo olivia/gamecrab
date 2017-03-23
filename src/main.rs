@@ -1,7 +1,7 @@
-extern crate rustgirl;
+extern crate gamecrab;
 use std::io::prelude::*;
 use std::fs::File;
-use rustgirl::{cpu, opcode, instr};
+use gamecrab::{cpu, opcode, instr};
 
 fn main() {
     let mut cpu : cpu::Cpu = Default::default();
