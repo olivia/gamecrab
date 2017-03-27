@@ -129,6 +129,7 @@ pub fn rrc(reg: Register, cpu: &mut Cpu) {
 pub fn inc_u8(reg: Register, cpu: &mut Cpu) {
   let reg_val = read_register(reg, cpu);
   let res = reg_val.wrapping_add(1);
+  write_register(reg, res, cpu);
   flag::bool_set(Flag::Z, res == 0, cpu);
   flag::bool_set(Flag::H, (reg_val & 0b00001000) != 0 && (res & 0b00001000) == 0, cpu);   
   flag::reset(Flag::N, cpu);
@@ -141,6 +142,7 @@ pub fn inc_u16(reg: Register, cpu: &mut Cpu) {
 pub fn dec_u8(reg: Register, cpu: &mut Cpu) {
   let reg_val = read_register(reg, cpu);
   let res = reg_val.wrapping_sub(1);
+  write_register(reg, res, cpu);
   flag::bool_set(Flag::Z, res == 0, cpu);
   flag::bool_set(Flag::H, !((reg_val & 0b00001000) == 0 && (res & 0b00001000) != 0), cpu);   
   flag::set(Flag::N, cpu);
@@ -189,6 +191,7 @@ pub fn exec_instr(op: OpCode, curr_addr: usize, cpu: &mut Cpu) -> usize {
         LD_M(reg, val) => ld_m(reg, val, curr_addr, cpu),
         LD_R(to_reg, from_reg) => ld_r(to_reg, from_reg, curr_addr, cpu),
         BIT(bit_pos, reg) => { bit(bit_pos, reg, cpu); curr_addr },
+        JR(offset) => (curr_addr as i16 + offset as i16) as usize,
         JR_C(cond, offset) => if test_cond(cond, cpu) { (curr_addr as i16 + offset as i16) as usize } else { curr_addr },
         DEC_F(reg) => { dec_u8(reg, cpu); curr_addr },
         DEC(reg) => { dec_u16(reg, cpu); curr_addr },

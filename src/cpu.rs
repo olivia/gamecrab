@@ -57,7 +57,7 @@ pub fn read_cart_address(address: usize, cpu: &mut Cpu) -> u8 {
 
 pub fn stack_push(val: u16, cpu: &mut Cpu) -> () {
   let (l_byte, r_byte) = ((val >> 8) as u8, (0x00FF & val) as u8);
-  cpu.sp -= 2; 
+  cpu.sp = cpu.sp.wrapping_sub(2); 
   cpu.memory[cpu.sp as usize] = r_byte;
   cpu.memory[(cpu.sp + 1) as usize] = l_byte;
 }
@@ -65,6 +65,7 @@ pub fn stack_push(val: u16, cpu: &mut Cpu) -> () {
 pub fn stack_pop(cpu: &mut Cpu) -> u16 {
   let r_byte = cpu.memory[cpu.sp as usize] as u16;
   let l_byte = cpu.memory[(cpu.sp + 1) as usize] as u16;
-  cpu.sp += 2; 
-  l_byte + r_byte
+  cpu.sp = cpu.sp.wrapping_add(2); 
+  let res = (l_byte << 8) + r_byte;
+  res
 }
