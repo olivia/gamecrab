@@ -5,6 +5,8 @@ use gamecrab::{cpu, opcode, instr};
 
 fn main() {
     let mut cpu : cpu::Cpu = Default::default();
+    cpu.load_bootrom("DMG_ROM.bin");
+    cpu.load_cart("kirby.gb");
     let mut f = File::open("DMG_ROM.bin").unwrap();
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer).ok();

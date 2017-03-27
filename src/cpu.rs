@@ -1,3 +1,6 @@
+use std::fs::File;
+use std::io::prelude::*;
+
 pub struct Cpu {
     pub a: u8,
     pub b: u8,
@@ -9,12 +12,30 @@ pub struct Cpu {
     pub l: u8,
     pub sp: u16,
     pub pc: u16,
-    pub memory: [u8; 0x10000]
+    pub memory: [u8; 0x10000],
+    pub boot_rom: Vec<u8>,
+    pub cart_rom: Vec<u8>,
+    pub has_booted: bool
+}
+
+impl Cpu {
+    pub fn load_bootrom(&mut self, path: &str) {
+        let mut f = File::open(path).unwrap();
+        f.read_to_end(&mut self.boot_rom).ok();
+    }
+
+    pub fn load_cart(&mut self, path: &str) {
+        let mut f = File::open(path).unwrap();
+        f.read_to_end(&mut self.cart_rom).ok();
+    }
 }
 
 impl Default for Cpu {
     fn default() -> Cpu { 
-        Cpu { a: 0, b: 0, c:0, d:0, e:0, f:0, h:0, l:0, sp:0, pc: 0, memory: [0; 0x10000] }
+        Cpu { 
+            a: 0, b: 0, c:0, d:0, e:0, f:0, h:0, l:0, sp:0, pc: 0, has_booted: false,
+            memory: [0; 0x10000], boot_rom: Vec::new(), cart_rom: Vec::new() 
+        }
     }
 }
 
@@ -23,7 +44,15 @@ pub fn write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
 }
 
 pub fn read_address(address: usize, cpu: &mut Cpu) -> u8 { 
-    cpu.memory[address]
+    match address {
+        0...0x00FF => { if cpu.has_booted { read_cart_address(address, cpu) } else { cpu.boot_rom[address] } },
+        0x0100...0x7FFF => read_cart_address(address, cpu),
+        _ => cpu.memory[address]
+    }
+}
+
+pub fn read_cart_address(address: usize, cpu: &mut Cpu) -> u8 {
+    cpu.cart_rom[address]
 }
 
 pub fn stack_push(val: u16, cpu: &mut Cpu) -> () {

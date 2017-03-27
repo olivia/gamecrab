@@ -75,11 +75,8 @@ pub enum OpCode {
     XOR_d8(u8)
 }
 
-fn get_arg(start:usize, num:u8, res:&Vec<u8>) -> u16 {
-    match num {
-        3 => ((res[start + 2] as u16) << 8) + (res[start + 1] as u16) ,
-        _ => 0
-    }
+fn read_u16(idx:usize, res:&Vec<u8>) -> u16 {
+    ((res[idx + 2] as u16) << 8) + (res[idx + 1] as u16)
 }
 
 fn get_cb(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
@@ -139,10 +136,10 @@ pub fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
         0x10 => (2, STOP, 4),
         0x20 => (2, JR_C(Cond::NZ, y[start + 1] as i8), 12), // 12/8 The first arg should be a signed byte
         0x30 => (2, JR_C(Cond::NC, y[start + 1] as i8), 12), //12/8 The first arg should be a signed byte
-        0x01 => (3, LD_M(BC, get_arg(start, 3, y)), 12),
-        0x11 => (3, LD_M(DE, get_arg(start, 3, y)), 12),
-        0x21 => (3, LD_M(HL, get_arg(start, 3, y)), 12),
-        0x31 => (3, LD_M(SP, get_arg(start, 3, y)), 12),
+        0x01 => (3, LD_M(BC, read_u16(start, y)), 12),
+        0x11 => (3, LD_M(DE, read_u16(start, y)), 12),
+        0x21 => (3, LD_M(HL, read_u16(start, y)), 12),
+        0x31 => (3, LD_M(SP, read_u16(start, y)), 12),
         0x02 => (1, LD_R(BC_ADDR, A), 8),
         0x12 => (1, LD_R(DE_ADDR, A), 8),
         0x22 => (1, LD_R(HLP, Register::A), 8),
@@ -167,7 +164,7 @@ pub fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
         0x17 => (1, RLA, 4),
         0x27 => (1, DAA, 4),
         0x37 => (1, SCF, 4),
-        0x08 => (3, LD_R(ADDR(get_arg(start, 3, y)), SP), 20),
+        0x08 => (3, LD_R(ADDR(read_u16(start, y)), SP), 20),
         0x18 => (2, JR(y[start + 1] as i8), 4),
         0x28 => (2, JR_C(Cond::Z, y[start + 1] as i8), 4), // 12/8
         0x38 => (2, JR_C(Cond::C, y[start + 1] as i8), 4),
@@ -201,19 +198,18 @@ pub fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
         0x3A => (1, LD_R(A, HLM), 8),
         0xE0 => (2, LD_R(ADDR(0xFF00 + (y[start + 1] as u16)), A), 12),
         0xF0 => (2, LD_R(A, ADDR(0xFF00 + (y[start + 1] as u16))), 12),
-        0xC2 => (3, JP_C(Cond::NZ, get_arg(start, 3, y)), 16), // 16/12
-        0xD2 => (3, JP_C(Cond::NC, get_arg(start, 3, y)), 16), // 16/12
+        0xC2 => (3, JP_C(Cond::NZ, read_u16(start, y)), 16), // 16/12
+        0xC3 => (3, JP(read_u16(start, y)), 16),
+        0xD2 => (3, JP_C(Cond::NC, read_u16(start, y)), 16), // 16/12
         0xE2 => (1, LD_R(CH, A), 8),
         0xF2 => (1, LD_R(A, CH), 8),
-        0xC3 => (3, JP(get_arg(start, 3, y)), 16),
         0xF3 => (1, DI, 4),
-        0xC4 => (3, CALL_C(Cond::NZ, get_arg(start, 3, y)), 24), // 24/12
-        0xD4 => (3, CALL_C(Cond::NC, get_arg(start, 3, y)), 24), // 24/12
+        0xD4 => (3, CALL_C(Cond::NC, read_u16(start, y)), 24), // 24/12
         0xCB => get_cb(start, y),
         0xFB => (1, EI, 4),
-        0xCC => (3, CALL_C(Cond::Z, get_arg(start, 3, y)), 24), // 24/12
-        0xDC => (3, CALL_C(Cond::C, get_arg(start, 3, y)), 24), // 24/12
-        0xCD => (3, CALL(get_arg(start, 3, y)), 24),
+        0xCC => (3, CALL_C(Cond::Z, read_u16(start, y)), 24), // 24/12
+        0xDC => (3, CALL_C(Cond::C, read_u16(start, y)), 24), // 24/12
+        0xCD => (3, CALL(read_u16(start, y)), 24),
         0x76 => (1, HALT, 4),
         b @ 0x40...0x7F => lookup_ld_r(b), //All the registers that use HL have the wrong cycle count
         b @ 0x80...0x88 => lookup_mod_op_a(ADD, b),
@@ -250,10 +246,10 @@ pub fn lookup_op(start:usize, y:&Vec<u8>) -> (usize, OpCode, u8) {
         0xD9 => (1, RETI, 16),
         0xE9 => (1, JP_HL, 4),
         0xF9 => (1, LD_R(SP, HL), 8),
-        0xCA => (3, JP_C(Cond::Z, get_arg(start, 3, y)), 16), // 16/12
-        0xDA => (3, JP_C(Cond::C, get_arg(start, 3, y)), 16),
-        0xEA => (3, LD_R(ADDR(get_arg(start, 3, y)), A), 16),
-        0xFA => (3, LD_R(A, ADDR(get_arg(start, 3, y))), 16),
+        0xCA => (3, JP_C(Cond::Z, read_u16(start, y)), 16), // 16/12
+        0xDA => (3, JP_C(Cond::C, read_u16(start, y)), 16),
+        0xEA => (3, LD_R(ADDR(read_u16(start, y)), A), 16),
+        0xFA => (3, LD_R(A, ADDR(read_u16(start, y))), 16),
         0xCE => (2, ADD_C_d8(A, y[start + 1]), 8),
         0xDE => (2, SUB_C_d8(A, y[start + 1]), 8),
         0xEE => (2, XOR_d8(y[start + 1]), 8),
