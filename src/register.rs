@@ -1,6 +1,7 @@
 use cpu::*;
 
 #[derive(Debug, Copy, Clone)]
+#[allow(non_camel_case_types)]
 pub enum Register {
     A,
     B,
@@ -70,7 +71,7 @@ pub fn write_register(reg: Register, val: u8, cpu: &mut Cpu) -> () {
        F => cpu.f = val,
        H => cpu.h = val,
        L => cpu.l = val,
-       CH => write_address((0xFF00 + read_register(C, cpu)) as usize, val, cpu),
+       CH => write_address(0xFF00 + read_register(C, cpu) as usize, val, cpu),
        HL_ADDR =>  write_address(read_multi_register(HL, cpu) as usize, val, cpu),
        BC_ADDR =>  write_address(read_multi_register(BC, cpu) as usize, val, cpu),
        DE_ADDR =>  write_address(read_multi_register(DE, cpu) as usize, val, cpu),

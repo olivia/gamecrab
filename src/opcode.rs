@@ -1,15 +1,16 @@
 use cpu::Cpu;
 use register::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Cond {
     NZ,
     Z,
     NC,
-    C
+    C,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
+#[allow(non_camel_case_types)]
 pub enum OpCode {
     ADD(Register, Register),
     ADD_d8(Register, u8),
@@ -29,7 +30,6 @@ pub enum OpCode {
     DEC_F(Register),
     DI,
     EI,
-    ERR(String),
     HALT,
     INC(Register),
     INC_F(Register),
@@ -64,7 +64,7 @@ pub enum OpCode {
     SWAP(Register),
     SRL(Register),
     SCF,
-    RST(u8),
+    RST(u16),
     SET(u8, Register),
     STOP,
     SUB(Register),
@@ -72,27 +72,26 @@ pub enum OpCode {
     SUB_C(Register, Register),
     SUB_C_d8(Register, u8),
     XOR(Register),
-    XOR_d8(u8)
+    XOR_d8(u8),
 }
 
-fn read_u8_arg(idx:usize, cpu:&mut Cpu) -> u8 {
+fn read_u8_arg(idx: usize, cpu: &mut Cpu) -> u8 {
     use cpu::*;
     read_address(idx + 1, cpu)
 }
 
-fn read_i8_arg(idx:usize, cpu:&mut Cpu) -> i8 {
+fn read_i8_arg(idx: usize, cpu: &mut Cpu) -> i8 {
     use cpu::*;
     read_address(idx + 1, cpu) as i8
 }
 
-fn read_u16_arg(idx:usize, cpu:&mut Cpu) -> u16 {
+fn read_u16_arg(idx: usize, cpu: &mut Cpu) -> u16 {
     use cpu::*;
     ((read_address(idx + 2, cpu) as u16) << 8) + (read_address(idx + 1, cpu) as u16)
 }
 
-fn get_cb(start:usize, cpu: &mut Cpu) -> (usize, OpCode, u8) {
+fn get_cb(start: usize, cpu: &mut Cpu) -> (usize, OpCode, usize) {
     use self::OpCode::*;
-    use cpu::*;
 
     let b = read_u8_arg(start, cpu);
     match b {
@@ -107,40 +106,44 @@ fn get_cb(start:usize, cpu: &mut Cpu) -> (usize, OpCode, u8) {
         0x40...0x7F => (2, BIT((b - 0x40) / 8, lookup_mod_register(b)), 8 * lookup_mod_mult(b)),
         0x80...0xBF => (2, RES((b - 0x80) / 8, lookup_mod_register(b)), 8 * lookup_mod_mult(b)),
         0xC0...0xFF => (2, SET((b - 0xC0) / 8, lookup_mod_register(b)), 8 * lookup_mod_mult(b)),
-        _ => (2, OpCode::ERR(format!("{:0>2X}", read_address(start, cpu))), 0)
+        _ => unreachable!(),
     }
 }
 
-fn lookup_mod_register(b:u8) -> Register {
-  use register::Register::*;
-  let registers = [B, C, D, E, H, L, HL_ADDR, A];
-  registers[(b % 8) as usize]
+fn lookup_mod_register(b: u8) -> Register {
+    use register::Register::*;
+    let registers = [B, C, D, E, H, L, HL_ADDR, A];
+    registers[(b % 8) as usize]
 }
 
-fn lookup_mod_cycles(b:u8) -> u8 {
-  if (b % 8) == 6 { 8 } else { 4 }
+fn lookup_mod_cycles(b: u8) -> usize {
+    if (b % 8) == 6 { 8 } else { 4 }
 }
 
-fn lookup_mod_mult(b:u8) -> u8 {
-  if (b % 8) == 6 { 2 } else { 1 }
+fn lookup_mod_mult(b: u8) -> usize {
+    if (b % 8) == 6 { 2 } else { 1 }
 }
 
-fn lookup_ld_r(b:u8) -> (usize, OpCode, u8){
-  let idx = b - 0x40;
-  let (left, right) = (lookup_mod_register(idx/8) , lookup_mod_register(b));
-  let cycles = if (idx / 8) == 6 || (idx % 8) == 6 { 8 } else { 4 };
-  (1, OpCode::LD_R(left, right), cycles)
+fn lookup_ld_r(b: u8) -> (usize, OpCode, usize) {
+    let idx = b - 0x40;
+    let (left, right) = (lookup_mod_register(idx / 8), lookup_mod_register(b));
+    let cycles = if (idx / 8) == 6 || (idx % 8) == 6 {
+        8
+    } else {
+        4
+    };
+    (1, OpCode::LD_R(left, right), cycles)
 }
 
-fn lookup_mod_op_a(op:fn(Register, Register) -> OpCode, b:u8) -> (usize, OpCode, u8) {
+fn lookup_mod_op_a(op: fn(Register, Register) -> OpCode, b: u8) -> (usize, OpCode, usize) {
     (1, op(Register::A, lookup_mod_register(b)), lookup_mod_cycles(b))
 }
 
-fn lookup_mod_op(op:fn(Register) -> OpCode, b:u8) -> (usize, OpCode, u8) {
+fn lookup_mod_op(op: fn(Register) -> OpCode, b: u8) -> (usize, OpCode, usize) {
     (1, op(lookup_mod_register(b)), lookup_mod_cycles(b))
 }
 
-pub fn lookup_op(start:usize, cpu: &mut Cpu) -> (usize, OpCode, u8) {
+pub fn lookup_op(start: usize, cpu: &mut Cpu) -> (usize, OpCode, usize) {
     use self::OpCode::*;
     use cpu::*;
     use register::Register::*;
@@ -248,7 +251,7 @@ pub fn lookup_op(start:usize, cpu: &mut Cpu) -> (usize, OpCode, u8) {
         0xD6 => (2, SUB_d8(read_u8_arg(start, cpu)), 8),
         0xE6 => (2, AND_d8(read_u8_arg(start, cpu)), 8),
         0xF6 => (2, OR_d8(read_u8_arg(start, cpu)), 8),
-        0xC7 => (1, RST(0x00), 8),
+        0xC7 => (1, RST(0x00), 16),
         0xD7 => (1, RST(0x10), 16),
         0xE7 => (1, RST(0x20), 16),
         0xF7 => (1, RST(0x30), 16),
@@ -272,19 +275,19 @@ pub fn lookup_op(start:usize, cpu: &mut Cpu) -> (usize, OpCode, u8) {
         0xDF => (1, RST(0x18), 16),
         0xEF => (1, RST(0x28), 16),
         0xFF => (1, RST(0x38), 16),
-        _ => (2, OpCode::ERR(format!("{:0>2X}", read_address(start, cpu))), 0)
+        _ => unreachable!(),
     };
     res
 }
 
-pub fn test_cond(cond: Cond, cpu: &mut Cpu) -> bool{
-   use self::Cond::*;
-   use flag;
-   use flag::Flag;
-   match cond {
-       Z => flag::is_set(Flag::Z, cpu),
-       NZ => !flag::is_set(Flag::Z, cpu),
-       C => flag::is_set(Flag::C, cpu),
-       NC => !flag::is_set(Flag::C, cpu)
-   } 
+pub fn test_cond(cond: Cond, cpu: &mut Cpu) -> bool {
+    use self::Cond::*;
+    use flag;
+    use flag::Flag;
+    match cond {
+        Z => flag::is_set(Flag::Z, cpu),
+        NZ => !flag::is_set(Flag::Z, cpu),
+        C => flag::is_set(Flag::C, cpu),
+        NC => !flag::is_set(Flag::C, cpu),
+    }
 }
