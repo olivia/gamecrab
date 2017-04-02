@@ -8,8 +8,8 @@ pub enum Interrupt {
     Joypad,
 }
 
+use self::Interrupt::*;
 pub fn exec_interrupts(address: usize, cpu: &mut Cpu) -> usize {
-    use self::Interrupt::*;
     if cpu.interrupt_master_enabled {
         let interrupts = [VBlank, LCD, Timer, Joypad];
         interrupts.iter()
@@ -19,6 +19,7 @@ pub fn exec_interrupts(address: usize, cpu: &mut Cpu) -> usize {
         address
     }
 }
+
 
 impl Interrupt {
     fn request(&self, cpu: &mut Cpu) {
@@ -51,7 +52,7 @@ impl Interrupt {
     }
 
     fn bit_pos(&self) -> u8 {
-        match self {
+        match *self {
             VBlank => 0,
             LCD => 1,
             Timer => 2,
@@ -60,7 +61,7 @@ impl Interrupt {
     }
 
     fn interrupt_address(&self) -> usize {
-        match self {
+        match *self {
             VBlank => 0x40,
             LCD => 0x48,
             Timer => 0x50,

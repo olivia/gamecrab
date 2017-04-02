@@ -65,6 +65,7 @@ fn write_tile(tile_num: usize,
 
 fn write_window(buffer: &mut [image::Rgba<u8>; 256 * 256], cpu: &mut cpu::Cpu) {
     if lcd::LCDC::WindowEnable.is_set(cpu) {
+
     }
 }
 
@@ -116,13 +117,15 @@ fn main() {
     let mut texture = Texture::from_image(&mut window.factory, &canvas, &TextureSettings::new())
         .unwrap();
     let mut frame = canvas;
+
     while let Some(e) = window.next() {
         let t1 = time::precise_time_ns();
         let (op_length, instr, cycles) = opcode::lookup_op(next_addr, &mut cpu);
-        println!("Address {:4>0X}: {:?} taking {:?} cycles",
-                 next_addr,
-                 instr,
-                 cycles);
+        //    println!("Address {:4>0X}: {:?} taking {:?} cycles",
+        // next_addr,
+        // instr,
+        // cycles);
+        //
         next_addr += op_length;
         let t2 = time::precise_time_ns();
         let (cycle_offset, new_addr) = instr::exec_instr(instr, next_addr, &mut cpu);
@@ -157,12 +160,14 @@ fn main() {
                      (t5 - t4) / 1000000);
 
         } else {
-            //            println!("Decode: {:?}ns\tExec: {:?}ns\tInterrupt: {:?}ns",
+            // println!("Decode: {:?}ns\tExec: {:?}ns\tInterrupt: {:?}ns",
             // t2 - t1,
             // t3 - t2,
             // t4 - t3);
             //
+
         }
     }
+
 
 }

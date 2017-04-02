@@ -94,18 +94,20 @@ fn get_cb(start: usize, cpu: &mut Cpu) -> (usize, OpCode, usize) {
     use self::OpCode::*;
 
     let b = read_u8_arg(start, cpu);
-    match b {
-        0x00...0x07 => (2, RLC(lookup_mod_register(b)), 8 * lookup_mod_mult(b)),
-        0x08...0x0F => (2, RRC(lookup_mod_register(b)), 8 * lookup_mod_mult(b)),
-        0x10...0x17 => (2, RL(lookup_mod_register(b)), 8 * lookup_mod_mult(b)),
-        0x18...0x1F => (2, RR(lookup_mod_register(b)), 8 * lookup_mod_mult(b)),
-        0x20...0x27 => (2, SLA(lookup_mod_register(b)), 8 * lookup_mod_mult(b)),
-        0x28...0x2F => (2, SRA(lookup_mod_register(b)), 8 * lookup_mod_mult(b)),
-        0x30...0x37 => (2, SWAP(lookup_mod_register(b)), 8 * lookup_mod_mult(b)),
-        0x38...0x3F => (2, SRL(lookup_mod_register(b)), 8 * lookup_mod_mult(b)),
-        0x40...0x7F => (2, BIT((b - 0x40) / 8, lookup_mod_register(b)), 8 * lookup_mod_mult(b)),
-        0x80...0xBF => (2, RES((b - 0x80) / 8, lookup_mod_register(b)), 8 * lookup_mod_mult(b)),
-        0xC0...0xFF => (2, SET((b - 0xC0) / 8, lookup_mod_register(b)), 8 * lookup_mod_mult(b)),
+    let (mod_register, mod_mult) = (lookup_mod_register(b), lookup_mod_mult(b));
+
+    match b >> 3 {
+        0 => (2, RLC(mod_register), 8 * mod_mult),
+        1 => (2, RRC(mod_register), 8 * mod_mult),
+        2 => (2, RL(mod_register), 8 * mod_mult),
+        3 => (2, RR(mod_register), 8 * mod_mult),
+        4 => (2, SLA(mod_register), 8 * mod_mult),
+        5 => (2, SRA(mod_register), 8 * mod_mult),
+        6 => (2, SWAP(mod_register), 8 * mod_mult),
+        7 => (2, SRL(mod_register), 8 * mod_mult),
+        0x08...0x0F => (2, BIT((b - 0x40) / 8, mod_register), 8 * mod_mult),
+        0x10...0x17 => (2, RES((b - 0x80) / 8, mod_register), 8 * mod_mult),
+        0x18...0x1F => (2, SET((b - 0xC0) / 8, mod_register), 8 * mod_mult),
         _ => unreachable!(),
     }
 }
@@ -116,31 +118,8 @@ fn lookup_mod_register(b: u8) -> Register {
     registers[(b % 8) as usize]
 }
 
-fn lookup_mod_cycles(b: u8) -> usize {
-    if (b % 8) == 6 { 8 } else { 4 }
-}
-
 fn lookup_mod_mult(b: u8) -> usize {
     if (b % 8) == 6 { 2 } else { 1 }
-}
-
-fn lookup_ld_r(b: u8) -> (usize, OpCode, usize) {
-    let idx = b - 0x40;
-    let (left, right) = (lookup_mod_register(idx / 8), lookup_mod_register(b));
-    let cycles = if (idx / 8) == 6 || (idx % 8) == 6 {
-        8
-    } else {
-        4
-    };
-    (1, OpCode::LD_R(left, right), cycles)
-}
-
-fn lookup_mod_op_a(op: fn(Register, Register) -> OpCode, b: u8) -> (usize, OpCode, usize) {
-    (1, op(Register::A, lookup_mod_register(b)), lookup_mod_cycles(b))
-}
-
-fn lookup_mod_op(op: fn(Register) -> OpCode, b: u8) -> (usize, OpCode, usize) {
-    (1, op(lookup_mod_register(b)), lookup_mod_cycles(b))
 }
 
 pub fn lookup_op(start: usize, cpu: &mut Cpu) -> (usize, OpCode, usize) {
@@ -228,15 +207,133 @@ pub fn lookup_op(start: usize, cpu: &mut Cpu) -> (usize, OpCode, usize) {
         0xDC => (3, CALL_C(Cond::C, read_u16_arg(start, cpu)), 24), // 24/12
         0xCD => (3, CALL(read_u16_arg(start, cpu)), 24),
         0x76 => (1, HALT, 4),
-        b @ 0x40...0x7F => lookup_ld_r(b), //All the registers that use HL have the wrong cycle count
-        b @ 0x80...0x88 => lookup_mod_op_a(ADD, b),
-        b @ 0x88...0x8F => lookup_mod_op_a(ADD_C, b),
-        b @ 0x90...0x98 => lookup_mod_op(SUB, b),
-        b @ 0x98...0x9F => lookup_mod_op_a(SUB_C, b),
-        b @ 0xA0...0xA8 => lookup_mod_op(AND, b),
-        b @ 0xA8...0xAF => lookup_mod_op(XOR, b),
-        b @ 0xB0...0xB8 => lookup_mod_op(OR, b),
-        b @ 0xB8...0xBF => lookup_mod_op(CP, b),
+        0x40 => (1, LD_R(B, B), 4),
+        0x41 => (1, LD_R(B, C), 4),
+        0x42 => (1, LD_R(B, D), 4),
+        0x43 => (1, LD_R(B, E), 4),
+        0x44 => (1, LD_R(B, H), 4),
+        0x45 => (1, LD_R(B, L), 4),
+        0x46 => (1, LD_R(B, HL_ADDR), 8),
+        0x47 => (1, LD_R(B, A), 4),
+        0x48 => (1, LD_R(C, B), 4),
+        0x49 => (1, LD_R(C, C), 4),
+        0x4A => (1, LD_R(C, D), 4),
+        0x4B => (1, LD_R(C, E), 4),
+        0x4C => (1, LD_R(C, H), 4),
+        0x4D => (1, LD_R(C, L), 4),
+        0x4E => (1, LD_R(C, HL_ADDR), 8),
+        0x4F => (1, LD_R(C, A), 4),
+        0x50 => (1, LD_R(D, B), 4),
+        0x51 => (1, LD_R(D, C), 4),
+        0x52 => (1, LD_R(D, D), 4),
+        0x53 => (1, LD_R(D, E), 4),
+        0x54 => (1, LD_R(D, H), 4),
+        0x55 => (1, LD_R(D, L), 4),
+        0x56 => (1, LD_R(D, HL_ADDR), 8),
+        0x57 => (1, LD_R(D, A), 4),
+        0x58 => (1, LD_R(E, B), 4),
+        0x59 => (1, LD_R(E, C), 4),
+        0x5A => (1, LD_R(E, D), 4),
+        0x5B => (1, LD_R(E, E), 4),
+        0x5C => (1, LD_R(E, H), 4),
+        0x5D => (1, LD_R(E, L), 4),
+        0x5E => (1, LD_R(E, HL_ADDR), 8),
+        0x5F => (1, LD_R(E, A), 4),
+        0x60 => (1, LD_R(H, B), 4),
+        0x61 => (1, LD_R(H, C), 4),
+        0x62 => (1, LD_R(H, D), 4),
+        0x63 => (1, LD_R(H, E), 4),
+        0x64 => (1, LD_R(H, H), 4),
+        0x65 => (1, LD_R(H, L), 4),
+        0x66 => (1, LD_R(H, HL_ADDR), 8),
+        0x67 => (1, LD_R(H, A), 4),
+        0x68 => (1, LD_R(L, B), 4),
+        0x69 => (1, LD_R(L, C), 4),
+        0x6A => (1, LD_R(L, D), 4),
+        0x6B => (1, LD_R(L, E), 4),
+        0x6C => (1, LD_R(L, H), 4),
+        0x6D => (1, LD_R(L, L), 4),
+        0x6E => (1, LD_R(L, HL_ADDR), 8),
+        0x6F => (1, LD_R(L, A), 4),
+        0x70 => (1, LD_R(HL_ADDR, B), 8),
+        0x71 => (1, LD_R(HL_ADDR, C), 8),
+        0x72 => (1, LD_R(HL_ADDR, D), 8),
+        0x73 => (1, LD_R(HL_ADDR, E), 8),
+        0x74 => (1, LD_R(HL_ADDR, H), 8),
+        0x75 => (1, LD_R(HL_ADDR, L), 8),
+        0x77 => (1, LD_R(HL_ADDR, A), 8),
+        0x78 => (1, LD_R(A, B), 4),
+        0x79 => (1, LD_R(A, C), 4),
+        0x7A => (1, LD_R(A, D), 4),
+        0x7B => (1, LD_R(A, E), 4),
+        0x7C => (1, LD_R(A, H), 4),
+        0x7D => (1, LD_R(A, L), 4),
+        0x7E => (1, LD_R(A, HL_ADDR), 8),
+        0x7F => (1, LD_R(A, A), 4),
+        0x80 => (1, ADD(A, B), 4),
+        0x81 => (1, ADD(A, C), 4),
+        0x82 => (1, ADD(A, D), 4),
+        0x83 => (1, ADD(A, E), 4),
+        0x84 => (1, ADD(A, H), 4),
+        0x85 => (1, ADD(A, L), 4),
+        0x86 => (1, ADD(A, HL_ADDR), 8),
+        0x87 => (1, ADD(A, A), 4),
+        0x88 => (1, ADD_C(A, B), 4),
+        0x89 => (1, ADD_C(A, C), 4),
+        0x8A => (1, ADD_C(A, D), 4),
+        0x8B => (1, ADD_C(A, E), 4),
+        0x8C => (1, ADD_C(A, H), 4),
+        0x8D => (1, ADD_C(A, L), 4),
+        0x8E => (1, ADD_C(A, HL_ADDR), 8),
+        0x8F => (1, ADD_C(A, A), 4),
+        0x90 => (1, SUB(B), 4),
+        0x91 => (1, SUB(C), 4),
+        0x92 => (1, SUB(D), 4),
+        0x93 => (1, SUB(E), 4),
+        0x94 => (1, SUB(H), 4),
+        0x95 => (1, SUB(L), 4),
+        0x96 => (1, SUB(HL_ADDR), 8),
+        0x97 => (1, SUB(A), 4),
+        0x98 => (1, SUB_C(A, B), 4),
+        0x99 => (1, SUB_C(A, C), 4),
+        0x9A => (1, SUB_C(A, D), 4),
+        0x9B => (1, SUB_C(A, E), 4),
+        0x9C => (1, SUB_C(A, H), 4),
+        0x9D => (1, SUB_C(A, L), 4),
+        0x9E => (1, SUB_C(A, HL_ADDR), 8),
+        0x9F => (1, SUB_C(A, A), 4),
+        0xA0 => (1, AND(B), 4),
+        0xA1 => (1, AND(C), 4),
+        0xA2 => (1, AND(D), 4),
+        0xA3 => (1, AND(E), 4),
+        0xA4 => (1, AND(H), 4),
+        0xA5 => (1, AND(L), 4),
+        0xA6 => (1, AND(HL_ADDR), 8),
+        0xA7 => (1, AND(A), 4),
+        0xA8 => (1, XOR(B), 4),
+        0xA9 => (1, XOR(C), 4),
+        0xAA => (1, XOR(D), 4),
+        0xAB => (1, XOR(E), 4),
+        0xAC => (1, XOR(H), 4),
+        0xAD => (1, XOR(L), 4),
+        0xAE => (1, XOR(HL_ADDR), 8),
+        0xAF => (1, XOR(A), 4),
+        0xB0 => (1, OR(B), 4),
+        0xB1 => (1, OR(C), 4),
+        0xB2 => (1, OR(D), 4),
+        0xB3 => (1, OR(E), 4),
+        0xB4 => (1, OR(H), 4),
+        0xB5 => (1, OR(L), 4),
+        0xB6 => (1, OR(HL_ADDR), 8),
+        0xB7 => (1, OR(A), 4),
+        0xB8 => (1, CP(B), 4),
+        0xB9 => (1, CP(C), 4),
+        0xBA => (1, CP(D), 4),
+        0xBB => (1, CP(E), 4),
+        0xBC => (1, CP(H), 4),
+        0xBD => (1, CP(L), 4),
+        0xBE => (1, CP(HL_ADDR), 8),
+        0xBF => (1, CP(A), 4),
         0xC0 => (1, RET_C(Cond::NZ), 8), // actually 20/8
         0xD0 => (1, RET_C(Cond::NC), 8), // actually 20/8
         0xC1 => (1, POP(BC), 12),

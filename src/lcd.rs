@@ -11,13 +11,15 @@ pub enum LCDC {
     BGEnable,
 }
 
+use self::LCDC::*;
+
 impl LCDC {
     pub fn is_set(&self, cpu: &mut Cpu) -> bool {
         read_address(0xFF40, cpu) & self.bit_mask() != 0
     }
 
     fn bit_mask(&self) -> u8 {
-        let shift = match self {
+        let shift = match *self {
             Power => 7,
             WindowTileMap => 6,
             WindowEnable => 5,
@@ -48,6 +50,8 @@ pub enum ScreenMode {
     Transferring,
 }
 
+use self::ScreenMode::*;
+
 impl ScreenMode {
     pub fn is_set(&self, cpu: &mut Cpu) -> bool {
         let val = read_stat_address(cpu) & self.stat_mask();
@@ -60,7 +64,7 @@ impl ScreenMode {
     }
 
     pub fn val(&self) -> u8 {
-        match self {
+        match *self {
             HBlank => 0,
             VBlank => 1,
             Searching => 2,
