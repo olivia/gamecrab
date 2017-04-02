@@ -12,7 +12,7 @@ pub enum LCDC {
 }
 
 impl LCDC {
-    fn is_set(&self, cpu: &mut Cpu) -> bool {
+    pub fn is_set(&self, cpu: &mut Cpu) -> bool {
         read_address(0xFF40, cpu) & self.bit_mask() != 0
     }
 
