@@ -9,22 +9,20 @@ use gamecrab::{cpu, opcode, instr, interrupt, lcd};
 
 fn get_gameboy_canvas(scale: u32) -> (u32, u32, image::ImageBuffer<image::Rgba<u8>, Vec<u8>>) {
     let (width, height) = (160, 144);
-    let mut canvas = image::ImageBuffer::new(width * scale, height * scale);
+    let mut canvas = image::ImageBuffer::new(width, height);
     for (x, y, pixel) in canvas.enumerate_pixels_mut() {
-        *pixel = get_color((x * x / (2 * scale) + y * y / (2 * scale)) as u8 % 4);
+        *pixel = get_color((x * x / 2 + y * y / 2) as u8 % 4);
     }
     (width * scale, height * scale, canvas)
 }
 
-fn render_frame(canvas: &mut image::ImageBuffer<image::Rgba<u8>, Vec<u8>>,
-                scale: u32,
-                cpu: &mut cpu::Cpu) {
+fn render_frame(canvas: &mut image::ImageBuffer<image::Rgba<u8>, Vec<u8>>, cpu: &mut cpu::Cpu) {
     let mut screen_buffer = [get_color(0); 256 * 256];
     if lcd::LCDC::Power.is_set(cpu) {
         write_background(&mut screen_buffer, cpu);
         write_window(&mut screen_buffer, cpu);
         write_sprites(&mut screen_buffer, cpu);
-        buffer_to_image_buffer(canvas, scale, screen_buffer)
+        buffer_to_image_buffer(canvas, screen_buffer)
     }
 }
 
@@ -77,11 +75,9 @@ fn write_sprites(buffer: &mut [image::Rgba<u8>; 256 * 256], cpu: &mut cpu::Cpu) 
 }
 
 fn buffer_to_image_buffer(canvas: &mut image::ImageBuffer<image::Rgba<u8>, Vec<u8>>,
-                          scale: u32,
                           buffer: [image::Rgba<u8>; 256 * 256]) {
-    let (width, height) = (160, 144);
     for (x, y, pixel) in canvas.enumerate_pixels_mut() {
-        let idx = (x / scale) + 256 * (y / scale);
+        let idx = x + 256 * y;
         *pixel = buffer[idx as usize];
     }
 }
@@ -97,19 +93,21 @@ fn get_color(idx: u8) -> image::Rgba<u8> {
 }
 
 fn main() {
+    let opengl = OpenGL::V3_2;
     let mut cpu: cpu::Cpu = Default::default();
     let mut counter = FPSCounter::new();
     cpu.load_bootrom("DMG_ROM.bin");
     cpu.load_cart("kirby.gb");
     let mut next_addr = 0;
     let mut cycle_count = 0;
-    let (width, height, canvas) = get_gameboy_canvas(4);
-    let mut screen_buffer = [image::Rgba([0, 0, 0, 255]); 256 * 256];
+    let scale = 4;
+    let (width, height, canvas) = get_gameboy_canvas(scale);
     let mut window: PistonWindow = WindowSettings::new("GameCrab", [width, height])
         .exit_on_esc(true)
+        .opengl(opengl)
         .build()
         .unwrap();
-    window.set_ups(1000000);
+    window.set_ups(10000);
 
     let factory = window.factory.clone();
     let font = "FiraSans-Regular.ttf";
@@ -119,28 +117,31 @@ fn main() {
         .unwrap();
     let mut frame = canvas;
     while let Some(e) = window.next() {
-        let start = time::precise_time_ns();
+        let t1 = time::precise_time_ns();
         let (op_length, instr, cycles) = opcode::lookup_op(next_addr, &mut cpu);
         println!("Address {:4>0X}: {:?} taking {:?} cycles",
                  next_addr,
                  instr,
                  cycles);
         next_addr += op_length;
+        let t2 = time::precise_time_ns();
         let (cycle_offset, new_addr) = instr::exec_instr(instr, next_addr, &mut cpu);
 
         next_addr = new_addr;
         cycle_count += cycles + cycle_offset;
+        let t3 = time::precise_time_ns();
         next_addr = interrupt::exec_interrupts(next_addr, &mut cpu);
+        let t4 = time::precise_time_ns();
 
         if let Some(_) = e.render_args() {
-            render_frame(&mut frame, 4, &mut cpu);
+            render_frame(&mut frame, &mut cpu);
             texture.update(&mut window.encoder, &frame)
                 .unwrap();
             window.draw_2d(&e, |c, g| {
                 let transform = c.transform.trans(10.0, 30.0);
 
                 clear([1.0; 4], g);
-                image(&texture, c.transform, g);
+                image(&texture, c.transform.scale(scale as f64, scale as f64), g);
                 text::Text::new_color([0.0, 1.0, 1.0, 1.0], 32).draw(&(counter.tick().to_string()),
                                                                      &mut glyphs,
                                                                      &c.draw_state,
@@ -148,6 +149,19 @@ fn main() {
                                                                      g);
 
             });
+            let t5 = time::precise_time_ns();
+            println!("Decode: {:?}ns\tExec: {:?}ns\tInterrupt: {:?}ns\tDraw Frame: {:?}ms",
+                     t2 - t1,
+                     t3 - t2,
+                     t4 - t3,
+                     (t5 - t4) / 1000000);
+
+        } else {
+            //            println!("Decode: {:?}ns\tExec: {:?}ns\tInterrupt: {:?}ns",
+            // t2 - t1,
+            // t3 - t2,
+            // t4 - t3);
+            //
         }
     }
 
