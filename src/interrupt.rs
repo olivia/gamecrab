@@ -33,7 +33,6 @@ impl Interrupt {
         cpu.interrupt_master_enabled = false;
         self.reset_request(cpu);
         stack_push(address as u16, cpu);
-        println!("Firing {:?}", self);
         self.interrupt_address()
     }
 

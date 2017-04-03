@@ -31,7 +31,6 @@ pub fn write_background(buffer: &mut [image::Rgba<u8>; 256 * 256], cpu: &mut Cpu
                           cpu);
         }
     } else {
-        println!("Background disabled");
     }
 }
 

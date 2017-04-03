@@ -43,7 +43,10 @@ pub fn read_register(reg: Register, cpu: &mut Cpu) -> u8 {
         BC_ADDR => read_address(read_multi_register(BC, cpu) as usize, cpu),
         DE_ADDR => read_address(read_multi_register(DE, cpu) as usize, cpu),
         ADDR(addr) => read_address(addr as usize, cpu),
-        _ => unreachable!(),
+        _ => {
+            println!("Failed to read {:?}", reg);
+            unreachable!()
+        }
     }
 }
 

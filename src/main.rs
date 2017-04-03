@@ -35,7 +35,7 @@ fn main() {
     let mut cpu: cpu::Cpu = Default::default();
     let mut counter = FPSCounter::new();
     cpu.load_bootrom("DMG_ROM.bin");
-    cpu.load_cart("tetris.gb");
+    cpu.load_cart("testgame.gb");
     let mut next_addr = 0;
     let scale = 3;
     let (width, height, canvas) = get_gameboy_canvas(scale);

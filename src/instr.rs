@@ -135,6 +135,15 @@ pub fn xor(reg: Register, cpu: &mut Cpu) -> () {
     write_register(Register::F, res_f, cpu);
 }
 
+pub fn xor_d8(val: u8, cpu: &mut Cpu) -> () {
+    let reg_a_val = read_register(Register::A, cpu);
+    let res = reg_a_val ^ val;
+    let res_f = (if res == 0 { 1 } else { 0 }) << 7;
+
+    write_register(Register::A, res, cpu);
+    write_register(Register::F, res_f, cpu);
+}
+
 pub fn cp(num: u8, cpu: &mut Cpu) {
     let a_val = cpu.a;
     flag::set(Flag::N, cpu);
@@ -312,6 +321,10 @@ pub fn exec_instr(op: OpCode, curr_addr: usize, cpu: &mut Cpu) -> (usize, usize)
             xor(reg, cpu);
             curr_addr
         }
+        XOR_d8(num) => {
+            xor_d8(num, cpu);
+            curr_addr
+        }
         LD(reg, val) => ld(reg, val, curr_addr, cpu),
         LD_M(reg, val) => ld_m(reg, val, curr_addr, cpu),
         LD_R(to_reg, from_reg) => ld_r(to_reg, from_reg, curr_addr, cpu),
@@ -448,9 +461,11 @@ pub fn exec_instr(op: OpCode, curr_addr: usize, cpu: &mut Cpu) -> (usize, usize)
         OR(reg) => a_or_val(read_register(reg, cpu), curr_addr, cpu),
         OR_d8(num) => a_or_val(num, curr_addr, cpu),
         ADD_r8(SP, offset) => add_to_sp(offset, curr_addr, cpu),
+        ADD_d8(A, num) => add_to_a(num, curr_addr, cpu),
         ADD(HL, reg) => add_to_hl(read_multi_register(reg, cpu), curr_addr, cpu),
         ADD(A, reg) => add_to_a(read_register(reg, cpu), curr_addr, cpu),
         SUB(reg) => sub_from_a(read_register(reg, cpu), curr_addr, cpu),
+        SUB_d8(num) => sub_from_a(num, curr_addr, cpu),
         SET(b, reg) => {
             write_register(reg, (1 << b) | read_register(reg, cpu), cpu);
             curr_addr

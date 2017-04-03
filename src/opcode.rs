@@ -151,7 +151,7 @@ pub fn lookup_op(start: usize, cpu: &mut Cpu) -> (usize, OpCode, usize) {
         0x05 => (1, DEC_F(B), 4),
         0x15 => (1, DEC_F(D), 4),
         0x25 => (1, DEC_F(H), 4),
-        0x35 => (1, DEC_F(HL), 12),
+        0x35 => (1, DEC_F(HL_ADDR), 12),
         0x06 => (2, LD(B, read_u8_arg(start, cpu)), 8),
         0x16 => (2, LD(D, read_u8_arg(start, cpu)), 8),
         0x26 => (2, LD(H, read_u8_arg(start, cpu)), 8),
