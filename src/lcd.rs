@@ -1,4 +1,5 @@
 use cpu::*;
+use interrupt::Interrupt;
 
 pub enum LCDC {
     Power,
@@ -30,6 +31,14 @@ impl LCDC {
             BGEnable => 0,
         };
         1 << shift
+    }
+}
+
+pub fn increment_ly(cpu: &mut Cpu) {
+    let val = (read_address(0xFF44, cpu) + 1) % 154;
+    write_address(0xFF44, (read_address(0xFF44, cpu) + 1) % 154, cpu);
+    if val == 144 {
+        Interrupt::VBlank.request(cpu);
     }
 }
 

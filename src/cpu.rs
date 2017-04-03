@@ -57,7 +57,7 @@ pub fn write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
     match address {
         0xFF46 => dma_transfer(val, cpu),
         0xFF41 => write_stat_address(address, val, cpu),
-        0xFF50 => cpu.has_booted = true,
+        0xFF50 => cpu.has_booted = false,
         _ => cpu.memory[address] = val,
     }
 }

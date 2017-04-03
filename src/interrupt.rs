@@ -22,7 +22,7 @@ pub fn exec_interrupts(address: usize, cpu: &mut Cpu) -> usize {
 
 
 impl Interrupt {
-    fn request(&self, cpu: &mut Cpu) {
+    pub fn request(&self, cpu: &mut Cpu) {
         let requests = get_requests(cpu);
         let mask = 1 << self.bit_pos();
         write_address(0xFF0F, requests | mask, cpu);

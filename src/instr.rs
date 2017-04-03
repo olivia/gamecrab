@@ -13,6 +13,26 @@ pub fn ld_m(reg: Register, val: u16, curr_addr: usize, cpu: &mut Cpu) -> usize {
     }
 }
 
+pub fn add_from_a(num: u8, curr_addr: usize, cpu: &mut Cpu) -> usize {
+    let a_val = cpu.a;
+    cpu.a = a_val.wrapping_add(num);
+    flag::reset(Flag::N, cpu);
+    flag::bool_set(Flag::Z, cpu.a == 0, cpu);
+    flag::bool_set(Flag::H, 0x10 <= ((a_val & 0x0F) + (num & 0x0F)), cpu);
+    flag::bool_set(Flag::C, 0x0100 <= (a_val as u16 + num as u16), cpu);
+    curr_addr
+}
+
+pub fn sub_from_a(num: u8, curr_addr: usize, cpu: &mut Cpu) -> usize {
+    let a_val = cpu.a;
+    flag::set(Flag::N, cpu);
+    flag::bool_set(Flag::Z, a_val == num, cpu);
+    flag::bool_set(Flag::H, (a_val & 0x0F) < (num & 0x0F), cpu);
+    flag::bool_set(Flag::C, a_val < num, cpu);
+    cpu.a = cpu.a.wrapping_sub(num);
+    curr_addr
+}
+
 pub fn ld(reg: Register, val: u8, curr_addr: usize, cpu: &mut Cpu) -> usize {
     match reg {
         _ => {
@@ -70,30 +90,30 @@ pub fn cp(num: u8, cpu: &mut Cpu) {
     flag::bool_set(Flag::C, a_val < num, cpu);
 }
 
-pub fn rl(reg: Register, cpu: &mut Cpu) {
+pub fn rl(reg: Register, conditional_z: bool, cpu: &mut Cpu) {
     let old_c_bit = if flag::is_set(Flag::C, cpu) { 1 } else { 0 };
-    let new_c_bit = (read_register(reg, cpu) & 0b10000000) >> 7;
-    write_register(reg, read_register(reg, cpu) << 1 + old_c_bit, cpu);
-    flag::bool_set(Flag::Z, read_register(reg, cpu) == 0, cpu);
+    let new_c_bit = read_register(reg, cpu) & 0x80;
+    write_register(reg, (read_register(reg, cpu) << 1) + old_c_bit, cpu);
+    flag::bool_set(Flag::Z, conditional_z && read_register(reg, cpu) == 0, cpu);
     flag::bool_set(Flag::C, new_c_bit != 0, cpu);
     flag::reset(Flag::N, cpu);
     flag::reset(Flag::H, cpu);
 }
 
-pub fn rlc(reg: Register, cpu: &mut Cpu) {
-    let new_c_bit = (read_register(reg, cpu) & 0b10000000) >> 7;
-    write_register(reg, read_register(reg, cpu) << 1 + new_c_bit, cpu);
-    flag::bool_set(Flag::Z, read_register(reg, cpu) == 0, cpu);
+pub fn rlc(reg: Register, conditional_z: bool, cpu: &mut Cpu) {
+    let new_c_bit = read_register(reg, cpu) & 0x80;
+    write_register(reg, read_register(reg, cpu).rotate_left(1), cpu);
+    flag::bool_set(Flag::Z, conditional_z && read_register(reg, cpu) == 0, cpu);
     flag::bool_set(Flag::C, new_c_bit != 0, cpu);
     flag::reset(Flag::N, cpu);
     flag::reset(Flag::H, cpu);
 }
 
-pub fn rr(reg: Register, cpu: &mut Cpu) {
+pub fn rr(reg: Register, conditional_z: bool, cpu: &mut Cpu) {
     let old_c_bit = if flag::is_set(Flag::C, cpu) { 1 } else { 0 };
     let new_c_bit = read_register(reg, cpu) & 1;
     write_register(reg, read_register(reg, cpu) >> 1 + old_c_bit << 7, cpu);
-    flag::bool_set(Flag::Z, read_register(reg, cpu) == 0, cpu);
+    flag::bool_set(Flag::Z, conditional_z && read_register(reg, cpu) == 0, cpu);
     flag::bool_set(Flag::C, new_c_bit != 0, cpu);
     flag::reset(Flag::N, cpu);
     flag::reset(Flag::H, cpu);
@@ -127,10 +147,10 @@ pub fn sla(reg: Register, cpu: &mut Cpu) {
     flag::reset(Flag::H, cpu);
 }
 
-pub fn rrc(reg: Register, cpu: &mut Cpu) {
+pub fn rrc(reg: Register, conditional_z: bool, cpu: &mut Cpu) {
     let new_c_bit = read_register(reg, cpu) & 1;
     write_register(reg, read_register(reg, cpu) >> 1 + new_c_bit << 7, cpu);
-    flag::bool_set(Flag::Z, read_register(reg, cpu) == 0, cpu);
+    flag::bool_set(Flag::Z, conditional_z && read_register(reg, cpu) == 0, cpu);
     flag::bool_set(Flag::C, new_c_bit != 0, cpu);
     flag::reset(Flag::N, cpu);
     flag::reset(Flag::H, cpu);
@@ -282,35 +302,35 @@ pub fn exec_instr(op: OpCode, curr_addr: usize, cpu: &mut Cpu) -> (usize, usize)
             curr_addr
         }
         RL(reg) => {
-            rl(reg, cpu);
+            rl(reg, true, cpu);
             curr_addr
         }
         RLC(reg) => {
-            rlc(reg, cpu);
+            rlc(reg, true, cpu);
             curr_addr
         }
         RLA => {
-            rl(Register::A, cpu);
+            rl(Register::A, false, cpu);
             curr_addr
         }
         RLCA => {
-            rlc(Register::A, cpu);
+            rlc(Register::A, false, cpu);
             curr_addr
         }
         RR(reg) => {
-            rr(reg, cpu);
+            rr(reg, true, cpu);
             curr_addr
         }
         RRC(reg) => {
-            rrc(reg, cpu);
+            rrc(reg, true, cpu);
             curr_addr
         }
         RRA => {
-            rr(Register::A, cpu);
+            rr(Register::A, false, cpu);
             curr_addr
         }
         RRCA => {
-            rrc(Register::A, cpu);
+            rrc(Register::A, false, cpu);
             curr_addr
         }
         SRA(reg) => {
@@ -357,6 +377,8 @@ pub fn exec_instr(op: OpCode, curr_addr: usize, cpu: &mut Cpu) -> (usize, usize)
             swap(reg, cpu);
             curr_addr
         }
+        ADD(Register::A, reg) => add_from_a(read_register(reg, cpu), curr_addr, cpu),
+        SUB(reg) => sub_from_a(read_register(reg, cpu), curr_addr, cpu),
         _ => unreachable!(),
     };
 
