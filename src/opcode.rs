@@ -147,7 +147,7 @@ pub fn lookup_op(start: usize, cpu: &mut Cpu) -> (usize, OpCode, usize) {
         0x04 => (1, INC_F(B), 4),
         0x14 => (1, INC_F(D), 4),
         0x24 => (1, INC_F(H), 4),
-        0x34 => (1, INC_F(HL), 12),
+        0x34 => (1, INC_F(HL_ADDR), 12),
         0x05 => (1, DEC_F(B), 4),
         0x15 => (1, DEC_F(D), 4),
         0x25 => (1, DEC_F(H), 4),
@@ -372,7 +372,10 @@ pub fn lookup_op(start: usize, cpu: &mut Cpu) -> (usize, OpCode, usize) {
         0xDF => (1, RST(0x18), 16),
         0xEF => (1, RST(0x28), 16),
         0xFF => (1, RST(0x38), 16),
-        _ => unreachable!(),
+        _ => {
+            println!("{:?}", op_byte);
+            unreachable!()
+        }
     };
     res
 }

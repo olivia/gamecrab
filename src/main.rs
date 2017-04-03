@@ -19,12 +19,14 @@ fn get_gameboy_canvas(scale: u32) -> (u32, u32, image::ImageBuffer<image::Rgba<u
 
 fn render_frame(canvas: &mut image::ImageBuffer<image::Rgba<u8>, Vec<u8>>, cpu: &mut cpu::Cpu) {
     use ppu::*;
-    let mut screen_buffer = [get_color(0); 256 * 256];
+    let mut screen_buffer = [image::Rgba([0, 0, 0, 255]); 256 * 256];
     if lcd::LCDC::Power.is_set(cpu) {
         write_background(&mut screen_buffer, cpu);
         write_window(&mut screen_buffer, cpu);
         write_sprites(&mut screen_buffer, cpu);
         buffer_to_image_buffer(canvas, screen_buffer)
+    } else {
+        println!("turned off");
     }
 }
 
@@ -33,7 +35,7 @@ fn main() {
     let mut cpu: cpu::Cpu = Default::default();
     let mut counter = FPSCounter::new();
     cpu.load_bootrom("DMG_ROM.bin");
-    cpu.load_cart("kirby.gb");
+    cpu.load_cart("tetris.gb");
     let mut next_addr = 0;
     let scale = 3;
     let (width, height, canvas) = get_gameboy_canvas(scale);
@@ -59,12 +61,11 @@ fn main() {
     while let Some(e) = window.next() {
         if let Some(_) = e.render_args() {
             while !lcd::LCDC::Power.is_set(&mut cpu) || frame_mod_cycles < 70224 {
-                let t1 = time::precise_time_ns();
                 if lcd::LCDC::Power.is_set(&mut cpu) {
                     tick_mod_cycles = true
                 }
                 let (op_length, instr, cycles) = opcode::lookup_op(next_addr, &mut cpu);
-                if false {
+                if false && cpu.has_booted {
                     println!("Address {:4>0X}: {:?} taking {:?} cycles",
                              next_addr,
                              instr,
@@ -72,7 +73,6 @@ fn main() {
                 }
 
                 next_addr += op_length;
-                let t2 = time::precise_time_ns();
                 let (cycle_offset, new_addr) = instr::exec_instr(instr, next_addr, &mut cpu);
 
                 next_addr = new_addr;
@@ -88,13 +88,10 @@ fn main() {
                     }
                     mod_cycles %= line_scan_cycles;
                 }
-                let t3 = time::precise_time_ns();
                 next_addr = interrupt::exec_interrupts(next_addr, &mut cpu);
-                let t4 = time::precise_time_ns();
             }
             frame_mod_cycles %= frame_cycles;
 
-            let t4 = time::precise_time_ns();
             render_frame(&mut frame, &mut cpu);
             texture.update(&mut window.encoder, &frame)
                 .unwrap();
@@ -109,7 +106,6 @@ fn main() {
                                                                      transform,
                                                                      g);
             });
-            let t5 = time::precise_time_ns();
 
 
         } else {

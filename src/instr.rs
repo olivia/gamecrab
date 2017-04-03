@@ -13,7 +13,48 @@ pub fn ld_m(reg: Register, val: u16, curr_addr: usize, cpu: &mut Cpu) -> usize {
     }
 }
 
-pub fn add_from_a(num: u8, curr_addr: usize, cpu: &mut Cpu) -> usize {
+pub fn add_to_sp(num: i8, curr_addr: usize, cpu: &mut Cpu) -> usize {
+    let sp_val = cpu.sp as i32;
+    cpu.sp = wrapping_off_u16_i8(cpu.sp, num);
+    flag::reset(Flag::N, cpu);
+    flag::bool_set(Flag::H,
+                   0x000F < ((sp_val & 0x000F) + ((num as i32) & 0x000F)),
+                   cpu);
+    flag::bool_set(Flag::C,
+                   0x00FF < ((sp_val & 0x00FF) + ((num as i32) & 0x00FF)),
+                   cpu);
+    curr_addr
+}
+
+
+pub fn add_to_hl(num: u16, curr_addr: usize, cpu: &mut Cpu) -> usize {
+    let hl_val = read_multi_register(Register::HL, cpu);
+    write_multi_register(Register::HL, hl_val.wrapping_add(num), cpu);
+    flag::reset(Flag::N, cpu);
+    flag::bool_set(Flag::H, 0x0FFF < ((hl_val & 0x0FFF) + (num & 0x0FFF)), cpu);
+    flag::bool_set(Flag::C, 0xFFFF < (hl_val as u32 + num as u32), cpu);
+    curr_addr
+}
+
+pub fn a_or_val(num: u8, curr_addr: usize, cpu: &mut Cpu) -> usize {
+    cpu.a |= num;
+    flag::bool_set(Flag::Z, cpu.a == 0, cpu);
+    flag::reset(Flag::N, cpu);
+    flag::reset(Flag::H, cpu);
+    flag::reset(Flag::C, cpu);
+    curr_addr
+}
+
+pub fn a_and_val(num: u8, curr_addr: usize, cpu: &mut Cpu) -> usize {
+    cpu.a &= num;
+    flag::bool_set(Flag::Z, cpu.a == 0, cpu);
+    flag::reset(Flag::N, cpu);
+    flag::set(Flag::H, cpu);
+    flag::reset(Flag::C, cpu);
+    curr_addr
+}
+
+pub fn add_to_a(num: u8, curr_addr: usize, cpu: &mut Cpu) -> usize {
     let a_val = cpu.a;
     cpu.a = a_val.wrapping_add(num);
     flag::reset(Flag::N, cpu);
@@ -48,13 +89,25 @@ pub fn ld_r(to_reg: Register, from_reg: Register, curr_addr: usize, cpu: &mut Cp
         (Register::HLM, _) => {
             let hl = read_multi_register(Register::HL, cpu);
             let new_hl = match to_reg {
-                Register::HLP => hl + 1,
-                _ => hl - 1,
+                Register::HLP => hl.wrapping_add(1),
+                _ => hl.wrapping_sub(1),
             };
             write_register(Register::HL_ADDR, read_register(from_reg, cpu), cpu);
             write_multi_register(Register::HL, new_hl, cpu);
             curr_addr
         }
+        (_, Register::HLP) |
+        (_, Register::HLM) => {
+            let hl_val = read_register(Register::HL_ADDR, cpu);
+            let hl_addr = read_multi_register(Register::HL, cpu);
+            write_register(to_reg, hl_val, cpu);
+            let new_hl_addr = match from_reg {
+                Register::HLP => hl_addr.wrapping_add(1),
+                _ => hl_addr.wrapping_sub(1),
+            };
+            write_multi_register(Register::HL, new_hl_addr, cpu);
+            curr_addr
+        } 
         (Register::CH, _) => {
             write_register(to_reg, read_register(from_reg, cpu), cpu);
             curr_addr
@@ -223,8 +276,17 @@ fn cycle_offset(op: OpCode, cpu: &mut Cpu) -> usize {
     }
 }
 
+fn wrapping_off_u16_i8(u_num: u16, i_num: i8) -> u16 {
+    if i_num < 0 {
+        u_num.wrapping_sub(i_num.abs() as u16)
+    } else {
+        u_num.wrapping_add(i_num as u16)
+    }
+}
+
 pub fn exec_instr(op: OpCode, curr_addr: usize, cpu: &mut Cpu) -> (usize, usize) {
     use opcode::OpCode::*;
+    use self::Register::*;
 
     let offset = cycle_offset(op, cpu);
     let new_addr = match op {
@@ -257,10 +319,10 @@ pub fn exec_instr(op: OpCode, curr_addr: usize, cpu: &mut Cpu) -> (usize, usize)
             bit(bit_pos, reg, cpu);
             curr_addr
         }
-        JR(offset) => (curr_addr as i16 + offset as i16) as usize,
+        JR(offset) => wrapping_off_u16_i8(curr_addr as u16, offset) as usize,
         JR_C(cond, offset) => {
             if test_cond(cond, cpu) {
-                (curr_addr as i16 + offset as i16) as usize
+                wrapping_off_u16_i8(curr_addr as u16, offset) as usize
             } else {
                 curr_addr
             }
@@ -346,6 +408,10 @@ pub fn exec_instr(op: OpCode, curr_addr: usize, cpu: &mut Cpu) -> (usize, usize)
             curr_addr
         }
         RET => stack_pop(cpu) as usize,
+        RETI => {
+            cpu.interrupt_master_enabled = true;
+            stack_pop(cpu) as usize
+        }
         RET_C(cond) => {
             if test_cond(cond, cpu) {
                 stack_pop(cpu) as usize
@@ -377,8 +443,22 @@ pub fn exec_instr(op: OpCode, curr_addr: usize, cpu: &mut Cpu) -> (usize, usize)
             swap(reg, cpu);
             curr_addr
         }
-        ADD(Register::A, reg) => add_from_a(read_register(reg, cpu), curr_addr, cpu),
+        AND(reg) => a_and_val(read_register(reg, cpu), curr_addr, cpu),
+        AND_d8(num) => a_and_val(num, curr_addr, cpu),
+        OR(reg) => a_or_val(read_register(reg, cpu), curr_addr, cpu),
+        OR_d8(num) => a_or_val(num, curr_addr, cpu),
+        ADD_r8(SP, offset) => add_to_sp(offset, curr_addr, cpu),
+        ADD(HL, reg) => add_to_hl(read_multi_register(reg, cpu), curr_addr, cpu),
+        ADD(A, reg) => add_to_a(read_register(reg, cpu), curr_addr, cpu),
         SUB(reg) => sub_from_a(read_register(reg, cpu), curr_addr, cpu),
+        SET(b, reg) => {
+            write_register(reg, (1 << b) | read_register(reg, cpu), cpu);
+            curr_addr
+        }
+        RES(b, reg) => {
+            write_register(reg, (0xFF - (1 << b)) & read_register(reg, cpu), cpu);
+            curr_addr
+        }
         _ => {
             println!("Please implement {:?}", op);
             unreachable!()

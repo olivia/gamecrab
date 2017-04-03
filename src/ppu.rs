@@ -1,10 +1,8 @@
 extern crate image;
 use cpu::*;
 use lcd::*;
-use std::cmp;
 
 pub fn write_background(buffer: &mut [image::Rgba<u8>; 256 * 256], cpu: &mut Cpu) {
-    use cpu::*;
     if LCDC::BGEnable.is_set(cpu) {
         let start = if LCDC::BGTileMap.is_set(cpu) {
             0x9C00
@@ -32,11 +30,12 @@ pub fn write_background(buffer: &mut [image::Rgba<u8>; 256 * 256], cpu: &mut Cpu
                           buffer,
                           cpu);
         }
+    } else {
+        println!("Background disabled");
     }
 }
 
 pub fn write_window(buffer: &mut [image::Rgba<u8>; 256 * 256], cpu: &mut Cpu) {
-    use cpu::*;
     if LCDC::WindowEnable.is_set(cpu) {
         let start = if LCDC::WindowTileMap.is_set(cpu) {
             0x9C00
@@ -68,7 +67,6 @@ pub fn write_window(buffer: &mut [image::Rgba<u8>; 256 * 256], cpu: &mut Cpu) {
 }
 
 pub fn write_sprites(buffer: &mut [image::Rgba<u8>; 256 * 256], cpu: &mut Cpu) {
-    use cpu::*;
     if LCDC::SpritesEnable.is_set(cpu) {
         let start = 0xFE00;
         let mut sprites_drawn = 0;
@@ -109,9 +107,6 @@ pub fn write_bg_tile(tile_num: usize,
                      pallette_address: usize,
                      buffer: &mut [image::Rgba<u8>; 256 * 256],
                      cpu: &mut Cpu) {
-    use cpu::*;
-    let tile_map_start = 0x8000;
-
     for row in 0..8 {
         let left_line = read_address(tile_map_start + 16 * tile_num + row * 2, cpu) as u16;
         let right_line = read_address(tile_map_start + 16 * tile_num + 1 + row * 2, cpu) as u16;
@@ -135,7 +130,6 @@ pub fn write_sprite_tile(tile_num: usize,
                          pallette_address: usize,
                          buffer: &mut [image::Rgba<u8>; 256 * 256],
                          cpu: &mut Cpu) {
-    use cpu::*;
     use std::cmp;
     let tile_map_start = 0x8000;
     let start_col = cmp::min(8, cmp::max(0, -x)) as usize;
@@ -166,7 +160,6 @@ pub fn write_tile(tile_num: usize,
                   tile_map_start: usize,
                   buffer: &mut [image::Rgba<u8>; 256 * 256],
                   cpu: &mut Cpu) {
-    use cpu::*;
     use std::cmp;
     let start_col = cmp::min(8, cmp::max(0, -x)) as usize;
     let end_col = cmp::max(0, cmp::min(8, 255 - x)) as usize;
@@ -189,7 +182,6 @@ pub fn write_tile(tile_num: usize,
 }
 
 pub fn lookup_color_idx(address: usize, pallete_idx: u8, cpu: &mut Cpu) -> u8 {
-    use cpu::*;
     (read_address(address, cpu) >> (pallete_idx * 2)) & 0b11
 }
 

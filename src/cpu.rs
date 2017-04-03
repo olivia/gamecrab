@@ -64,7 +64,7 @@ pub fn write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
 
 pub fn write_stat_address(address: usize, val: u8, cpu: &mut Cpu) {
     let read_only_val = (read_address(address, cpu) & 0b111) | (1 << 7);
-    write_address(address, (val & (0xFF - 0b111)) | read_only_val, cpu)
+    cpu.memory[address] = (val & (0xFF - 0b111)) | read_only_val;
 }
 
 fn dma_transfer(val: u8, cpu: &mut Cpu) {
@@ -101,7 +101,7 @@ pub fn stack_push(val: u16, cpu: &mut Cpu) -> () {
     let (l_byte, r_byte) = ((val >> 8) as u8, (0x00FF & val) as u8);
     cpu.sp = cpu.sp.wrapping_sub(2);
     cpu.memory[cpu.sp as usize] = r_byte;
-    cpu.memory[(cpu.sp + 1) as usize] = l_byte;
+    cpu.memory[(cpu.sp.wrapping_add(1)) as usize] = l_byte;
 }
 
 pub fn stack_pop(cpu: &mut Cpu) -> u16 {
