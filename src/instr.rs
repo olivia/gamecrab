@@ -379,7 +379,10 @@ pub fn exec_instr(op: OpCode, curr_addr: usize, cpu: &mut Cpu) -> (usize, usize)
         }
         ADD(Register::A, reg) => add_from_a(read_register(reg, cpu), curr_addr, cpu),
         SUB(reg) => sub_from_a(read_register(reg, cpu), curr_addr, cpu),
-        _ => unreachable!(),
+        _ => {
+            println!("Please implement {:?}", op);
+            unreachable!()
+        }
     };
 
     (offset, new_addr)

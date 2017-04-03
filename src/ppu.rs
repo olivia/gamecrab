@@ -24,12 +24,13 @@ pub fn write_background(buffer: &mut [image::Rgba<u8>; 256 * 256], cpu: &mut Cpu
             } else {
                 (128 as i16 + (read_address(start + offset, cpu) as i8) as i16) as usize
             };
-            write_tile(tile_num,
-                       (256 + 8 * (offset % 32) as isize - scroll_x as isize) % 256,
-                       (256 + 8 * (offset / 32) as isize - scroll_y as isize) % 256,
-                       tile_map_start,
-                       buffer,
-                       cpu);
+            write_bg_tile(tile_num,
+                          (256 + 8 * (offset % 32) as isize - scroll_x as isize) % 256,
+                          (256 + 8 * (offset / 32) as isize - scroll_y as isize) % 256,
+                          tile_map_start,
+                          0xFF47,
+                          buffer,
+                          cpu);
         }
     }
 }
@@ -97,6 +98,33 @@ pub fn write_sprites(buffer: &mut [image::Rgba<u8>; 256 * 256], cpu: &mut Cpu) {
                 write_sprite_tile(tile_num, x - 8, y - 16, pallette_address, buffer, cpu);
                 write_sprite_tile(tile_num, x - 8, y - 8, pallette_address, buffer, cpu);
             }
+        }
+    }
+}
+
+pub fn write_bg_tile(tile_num: usize,
+                     x: isize,
+                     y: isize,
+                     tile_map_start: usize,
+                     pallette_address: usize,
+                     buffer: &mut [image::Rgba<u8>; 256 * 256],
+                     cpu: &mut Cpu) {
+    use cpu::*;
+    let tile_map_start = 0x8000;
+
+    for row in 0..8 {
+        let left_line = read_address(tile_map_start + 16 * tile_num + row * 2, cpu) as u16;
+        let right_line = read_address(tile_map_start + 16 * tile_num + 1 + row * 2, cpu) as u16;
+
+        for col in 0..8 {
+            let color_idx = lookup_color_idx(pallette_address,
+                                             ((right_line >> (7 - col) & 1) << 1) as u8 +
+                                             (left_line >> (7 - col) & 1) as u8,
+                                             cpu);
+            let x_idx = (x + col as isize) % 256;
+            let y_idx = (y + row as isize) % 256;
+            let buffer_idx = 256 * y_idx as usize + x_idx as usize;
+            buffer[buffer_idx] = get_color(color_idx);
         }
     }
 }
