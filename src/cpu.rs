@@ -1,5 +1,7 @@
 use std::fs::File;
 use std::io::prelude::*;
+use interrupt::*;
+use lcd::*;
 
 pub struct Cpu {
     pub a: u8,
@@ -17,6 +19,8 @@ pub struct Cpu {
     pub cart_rom: Vec<u8>,
     pub has_booted: bool,
     pub interrupt_master_enabled: bool,
+    curr_clocks: u32,
+    curr_freq_clocks: u32,
 }
 
 impl Cpu {
@@ -28,6 +32,73 @@ impl Cpu {
     pub fn load_cart(&mut self, path: &str) {
         let mut f = File::open(path).unwrap();
         f.read_to_end(&mut self.cart_rom).ok();
+    }
+
+    pub fn inc_clocks(&mut self, clocks: usize) {
+        // increment div
+        self.curr_clocks += clocks as u32;
+        if self.curr_clocks > 256 {
+            self.curr_clocks %= 256;
+            let div = read_address(0xFF04, self);
+            write_address(0xFF04, div.wrapping_add(1), self);
+        }
+
+        if TAC::Enabled.is_set(self) {
+            println!("increment div");
+            // increment
+            self.curr_freq_clocks += clocks as u32;
+            let freq = get_tac_freq(self);
+            if self.curr_freq_clocks > freq {
+                self.curr_freq_clocks %= freq;
+                let tma = read_address(0xFF06, self);
+                let tima = read_address(0xFF05, self);
+                // overflow
+                if tima == 0xFF {
+                    write_address(0xFF05, tma, self);
+                    Interrupt::Timer.request(self);
+                    println!("Overflow");
+                } else {
+                    write_address(0xFF05, tima + 1, self);
+                }
+            }
+        }
+    }
+}
+
+pub enum TAC {
+    Enabled,
+    Freq1024,
+    Freq16,
+    Freq64,
+    Freq256,
+}
+
+impl TAC {
+    pub fn is_set(&self, cpu: &mut Cpu) -> bool {
+        use self::TAC::*;
+        let tac = read_address(0xFF07, cpu);
+        println!("TAC is {:4>0X}", tac);
+        let bit2 = tac & 0b100;
+        let bit10 = tac & 0b11;
+        match *self {
+            Enabled => bit2 != 0,
+            Freq1024 => bit10 == 0,
+            Freq16 => bit10 == 1,
+            Freq64 => bit10 == 2,
+            Freq256 => bit10 == 3,
+        }
+    }
+}
+
+fn get_tac_freq(cpu: &mut Cpu) -> u32 {
+    let tac = read_address(0xFF07, cpu);
+    let bit10 = tac & 0b11;
+    match bit10 {
+        0 => 1024,
+        1 => 16,
+        2 => 64,
+        3 => 256,
+        _ => unreachable!(),
     }
 }
 
@@ -49,28 +120,69 @@ impl Default for Cpu {
             memory: [0; 0x10000],
             boot_rom: Vec::new(),
             cart_rom: Vec::new(),
+            curr_clocks: 0,
+            curr_freq_clocks: 0,
+        }
+    }
+}
+
+pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
+    let safe_to_write = match address {
+        0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
+        0xFE00...0xFE9F => {
+            // OAM
+            !LCDC::Power.is_set(cpu) ||
+            (ScreenMode::HBlank.is_set(cpu) || ScreenMode::VBlank.is_set(cpu))
+        } 
+        0xFEA0...0xFEFF => false, //Unused memory
+        _ => true,
+    };
+    if safe_to_write {
+        match address {
+            0xE000...0xFDFF => write_address(address - 0x1000, val, cpu),
+            0xFF04 => cpu.memory[address] = 0,
+            0xFF46 => dma_transfer(val, cpu), //this needs to be synced with clocks
+            0xFF41 => write_stat_address(val, cpu),
+            0xFF50 => cpu.has_booted = true,
+            0xFF44 => write_address(address, 0, cpu),
+
+            _ => write_address(address, val, cpu),
         }
     }
 }
 
 pub fn write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
     match address {
-        0xFF46 => dma_transfer(val, cpu),
-        0xFF41 => write_stat_address(address, val, cpu),
-        0xFF50 => cpu.has_booted = true,
         _ => cpu.memory[address] = val,
     }
 }
 
-pub fn write_stat_address(address: usize, val: u8, cpu: &mut Cpu) {
-    let read_only_val = (read_address(address, cpu) & 0b111) | (1 << 7);
-    cpu.memory[address] = (val & (0xFF - 0b111)) | read_only_val;
-}
-
 fn dma_transfer(val: u8, cpu: &mut Cpu) {
+    println!("{:?}", val);
     let source_addr = (val as u16) << 8;
     for (i, addr) in (source_addr..(source_addr | 0xA0)).enumerate() {
         cpu.memory[0xFE00 + i] = cpu.memory[addr as usize];
+    }
+}
+
+pub fn safe_read_address(address: usize, cpu: &mut Cpu) -> u8 {
+    let safe_to_read = match address {
+        0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
+        0xFEA0...0xFEFF => false,
+        0xFE00...0xFE9F => {
+            !LCDC::Power.is_set(cpu) ||
+            (ScreenMode::HBlank.is_set(cpu) || ScreenMode::VBlank.is_set(cpu))
+        } 
+        _ => true,
+    };
+    if safe_to_read {
+        match address {
+            0xE000...0xFDFF => read_address(address - 0x1000, cpu),
+            0xFF41 => read_stat_address(cpu), 
+            _ => read_address(address, cpu),
+        }
+    } else {
+        0xFF
     }
 }
 

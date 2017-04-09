@@ -3,7 +3,7 @@ use cpu::*;
 use lcd::*;
 
 pub fn render_frame(canvas: &mut image::ImageBuffer<image::Rgba<u8>, Vec<u8>>, cpu: &mut Cpu) {
-    let mut screen_buffer = [image::Rgba([0, 0, 0, 255]); 256 * 256];
+    let mut screen_buffer = [get_color(0); 256 * 256];
     if LCDC::Power.is_set(cpu) {
         write_background(&mut screen_buffer, cpu);
         write_window(&mut screen_buffer, cpu);

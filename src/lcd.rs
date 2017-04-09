@@ -48,7 +48,7 @@ pub fn update_status(frames: usize, cpu: &mut Cpu) {
             };
 
             if !new_mode.is_set(cpu) {
-                if interrupt_enabled {
+                if interrupt_enabled && cpu.interrupt_master_enabled {
                     Interrupt::LCD.request(cpu);
                 }
                 new_mode.set(cpu);
@@ -61,14 +61,25 @@ pub fn update_status(frames: usize, cpu: &mut Cpu) {
 pub fn increment_ly(cpu: &mut Cpu) {
     let val = (read_address(0xFF44, cpu) + 1) % 154;
     write_address(0xFF44, (read_address(0xFF44, cpu) + 1) % 154, cpu);
-    if val == 144 {
-        Interrupt::VBlank.request(cpu);
+    if cpu.interrupt_master_enabled {
+        if val == 144 {
+            Interrupt::VBlank.request(cpu);
+        }
+        if stat_is_set(STAT::Mode1VBlankCheck, cpu) && val == 144 {
+            Interrupt::LCD.request(cpu);
+        }
+        if stat_is_set(STAT::LYLYCCheck, cpu) && val == read_address(0xFF45, cpu) {
+            Interrupt::LCD.request(cpu);
+        }
     }
-    if stat_is_set(STAT::Mode1VBlankCheck, cpu) && val == 144 {
-        Interrupt::LCD.request(cpu);
-    }
-    if stat_is_set(STAT::LYLYCCheck, cpu) && val == read_address(0xFF45, cpu) {
-        Interrupt::LCD.request(cpu);
+
+    // set lcy=ly comparison flag
+    if val == read_address(0xFF45, cpu) {
+        let stat = read_address(0xFF41, cpu);
+        write_address(0xFF41, stat | 0b100, cpu);
+    } else {
+        let stat = read_address(0xFF41, cpu);
+        write_address(0xFF41, stat & (0xFF - 0b100), cpu);
     }
 }
 
@@ -126,8 +137,9 @@ pub fn read_stat_address(cpu: &mut Cpu) -> u8 {
 }
 
 pub fn write_stat_address(val: u8, cpu: &mut Cpu) {
-    let read_only_val = read_address(0xFF41, cpu) & 0b111;
-    write_address(0xFF41, (val & (0xFF - 0b111)) | read_only_val, cpu)
+    let prev_val = read_address(0xFF41, cpu);
+    let write_val = (val & (0xFF - 0b111)) | (prev_val & 0b111);
+    write_address(0xFF41, write_val, cpu)
 }
 
 pub fn stat_is_set(stat: STAT, cpu: &mut Cpu) -> bool {

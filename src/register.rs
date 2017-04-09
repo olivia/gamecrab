@@ -33,16 +33,16 @@ pub fn read_register(reg: Register, cpu: &mut Cpu) -> u8 {
         A => cpu.a,
         B => cpu.b,
         C => cpu.c,
-        CH => read_address(0xFF00 + read_register(C, cpu) as usize, cpu),
+        CH => safe_read_address(0xFF00 + read_register(C, cpu) as usize, cpu),
         D => cpu.d,
         E => cpu.e,
         F => cpu.f,
         H => cpu.h,
         L => cpu.l,
-        HL_ADDR => read_address(read_multi_register(HL, cpu) as usize, cpu),
-        BC_ADDR => read_address(read_multi_register(BC, cpu) as usize, cpu),
-        DE_ADDR => read_address(read_multi_register(DE, cpu) as usize, cpu),
-        ADDR(addr) => read_address(addr as usize, cpu),
+        HL_ADDR => safe_read_address(read_multi_register(HL, cpu) as usize, cpu),
+        BC_ADDR => safe_read_address(read_multi_register(BC, cpu) as usize, cpu),
+        DE_ADDR => safe_read_address(read_multi_register(DE, cpu) as usize, cpu),
+        ADDR(addr) => safe_read_address(addr as usize, cpu),
         _ => {
             println!("Failed to read {:?}", reg);
             unreachable!()
@@ -74,11 +74,11 @@ pub fn write_register(reg: Register, val: u8, cpu: &mut Cpu) -> () {
         F => cpu.f = val,
         H => cpu.h = val,
         L => cpu.l = val,
-        CH => write_address(0xFF00 + read_register(C, cpu) as usize, val, cpu),
-        HL_ADDR => write_address(read_multi_register(HL, cpu) as usize, val, cpu),
-        BC_ADDR => write_address(read_multi_register(BC, cpu) as usize, val, cpu),
-        DE_ADDR => write_address(read_multi_register(DE, cpu) as usize, val, cpu),
-        ADDR(address) => write_address(address as usize, val, cpu),
+        CH => safe_write_address(0xFF00 + read_register(C, cpu) as usize, val, cpu),
+        HL_ADDR => safe_write_address(read_multi_register(HL, cpu) as usize, val, cpu),
+        BC_ADDR => safe_write_address(read_multi_register(BC, cpu) as usize, val, cpu),
+        DE_ADDR => safe_write_address(read_multi_register(DE, cpu) as usize, val, cpu),
+        ADDR(address) => safe_write_address(address as usize, val, cpu),
         _ => unreachable!(),
     }
 }

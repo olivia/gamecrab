@@ -77,6 +77,7 @@ fn main() {
                     mod_cycles %= line_scan_cycles;
                 }
 
+                cpu.inc_clocks(cycles + cycle_offset);
                 lcd::update_status(frame_mod_cycles, &mut cpu);
                 next_addr = interrupt::exec_interrupts(next_addr, &mut cpu);
             }

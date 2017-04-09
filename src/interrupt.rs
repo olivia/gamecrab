@@ -15,7 +15,10 @@ pub fn exec_interrupts(address: usize, cpu: &mut Cpu) -> usize {
         let interrupts = [VBlank, LCD, Timer, Joypad];
         interrupts.iter()
             .find(|&interrupt| interrupt.is_requested(cpu) && interrupt.is_enabled(cpu))
-            .map_or(address, |interrupt| interrupt.exec(address, cpu))
+            .map_or(address, |interrupt| {
+                println!("{:?} Executed", interrupt);
+                interrupt.exec(address, cpu)
+            })
     } else {
         address
     }
