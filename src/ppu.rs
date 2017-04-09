@@ -2,6 +2,18 @@ extern crate image;
 use cpu::*;
 use lcd::*;
 
+pub fn render_frame(canvas: &mut image::ImageBuffer<image::Rgba<u8>, Vec<u8>>, cpu: &mut Cpu) {
+    let mut screen_buffer = [image::Rgba([0, 0, 0, 255]); 256 * 256];
+    if LCDC::Power.is_set(cpu) {
+        write_background(&mut screen_buffer, cpu);
+        write_window(&mut screen_buffer, cpu);
+        write_sprites(&mut screen_buffer, cpu);
+        buffer_to_image_buffer(canvas, screen_buffer)
+    } else {
+        println!("turned off");
+    }
+}
+
 pub fn write_background(buffer: &mut [image::Rgba<u8>; 256 * 256], cpu: &mut Cpu) {
     if LCDC::BGEnable.is_set(cpu) {
         let start = if LCDC::BGTileMap.is_set(cpu) {

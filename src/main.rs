@@ -17,25 +17,12 @@ fn get_gameboy_canvas(scale: u32) -> (u32, u32, image::ImageBuffer<image::Rgba<u
     (width * scale, height * scale, canvas)
 }
 
-fn render_frame(canvas: &mut image::ImageBuffer<image::Rgba<u8>, Vec<u8>>, cpu: &mut cpu::Cpu) {
-    use ppu::*;
-    let mut screen_buffer = [image::Rgba([0, 0, 0, 255]); 256 * 256];
-    if lcd::LCDC::Power.is_set(cpu) {
-        write_background(&mut screen_buffer, cpu);
-        write_window(&mut screen_buffer, cpu);
-        write_sprites(&mut screen_buffer, cpu);
-        buffer_to_image_buffer(canvas, screen_buffer)
-    } else {
-        println!("turned off");
-    }
-}
-
 fn main() {
     let opengl = OpenGL::V3_2;
     let mut cpu: cpu::Cpu = Default::default();
     let mut counter = FPSCounter::new();
     cpu.load_bootrom("DMG_ROM.bin");
-    cpu.load_cart("testgame.gb");
+    cpu.load_cart("tetris.gb");
     let mut next_addr = 0;
     let scale = 3;
     let (width, height, canvas) = get_gameboy_canvas(scale);
@@ -60,7 +47,7 @@ fn main() {
     let frame_cycles = 70224;
     while let Some(e) = window.next() {
         if let Some(_) = e.render_args() {
-            while !lcd::LCDC::Power.is_set(&mut cpu) || frame_mod_cycles < 70224 {
+            while !lcd::LCDC::Power.is_set(&mut cpu) || frame_mod_cycles < frame_cycles {
                 if lcd::LCDC::Power.is_set(&mut cpu) {
                     tick_mod_cycles = true
                 }
@@ -82,17 +69,20 @@ fn main() {
                     frame_mod_cycles += cycles + cycle_offset;
                 }
 
+                // Finished ~456 clocks
                 if mod_cycles > line_scan_cycles {
                     if lcd::LCDC::Power.is_set(&mut cpu) {
                         lcd::increment_ly(&mut cpu);
                     }
                     mod_cycles %= line_scan_cycles;
                 }
+
+                lcd::update_status(frame_mod_cycles, &mut cpu);
                 next_addr = interrupt::exec_interrupts(next_addr, &mut cpu);
             }
             frame_mod_cycles %= frame_cycles;
 
-            render_frame(&mut frame, &mut cpu);
+            ppu::render_frame(&mut frame, &mut cpu);
             texture.update(&mut window.encoder, &frame)
                 .unwrap();
             window.draw_2d(&e, |c, g| {

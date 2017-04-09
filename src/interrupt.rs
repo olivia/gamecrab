@@ -1,4 +1,5 @@
 use cpu::*;
+use self::Interrupt::*;
 
 // Ordered in descending priority
 #[derive(Debug, Clone, Copy)]
@@ -9,7 +10,6 @@ pub enum Interrupt {
     Joypad,
 }
 
-use self::Interrupt::*;
 pub fn exec_interrupts(address: usize, cpu: &mut Cpu) -> usize {
     if cpu.interrupt_master_enabled {
         let interrupts = [VBlank, LCD, Timer, Joypad];
