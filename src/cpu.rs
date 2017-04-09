@@ -77,7 +77,6 @@ impl TAC {
     pub fn is_set(&self, cpu: &mut Cpu) -> bool {
         use self::TAC::*;
         let tac = read_address(0xFF07, cpu);
-        println!("TAC is {:4>0X}", tac);
         let bit2 = tac & 0b100;
         let bit10 = tac & 0b11;
         match *self {
@@ -158,7 +157,6 @@ pub fn write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
 }
 
 fn dma_transfer(val: u8, cpu: &mut Cpu) {
-    println!("{:?}", val);
     let source_addr = (val as u16) << 8;
     for (i, addr) in (source_addr..(source_addr | 0xA0)).enumerate() {
         cpu.memory[0xFE00 + i] = cpu.memory[addr as usize];
