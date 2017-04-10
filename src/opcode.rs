@@ -96,20 +96,20 @@ fn get_cb(start: usize, cpu: &mut Cpu) -> (usize, OpCode, usize) {
     let b = read_u8_arg(start, cpu);
     let (mod_register, mod_mult) = (lookup_mod_register(b), lookup_mod_mult(b));
 
-    match b >> 3 {
-        0 => (2, RLC(mod_register), 8 * mod_mult),
-        1 => (2, RRC(mod_register), 8 * mod_mult),
-        2 => (2, RL(mod_register), 8 * mod_mult),
-        3 => (2, RR(mod_register), 8 * mod_mult),
-        4 => (2, SLA(mod_register), 8 * mod_mult),
-        5 => (2, SRA(mod_register), 8 * mod_mult),
-        6 => (2, SWAP(mod_register), 8 * mod_mult),
-        7 => (2, SRL(mod_register), 8 * mod_mult),
-        0x08...0x0F => (2, BIT((b - 0x40) / 8, mod_register), 8 * mod_mult),
-        0x10...0x17 => (2, RES((b - 0x80) / 8, mod_register), 8 * mod_mult),
-        0x18...0x1F => (2, SET((b - 0xC0) / 8, mod_register), 8 * mod_mult),
+    (2, match b >> 3 {
+        0 => RLC(mod_register),
+        1 => RRC(mod_register),
+        2 => RL(mod_register),
+        3 => RR(mod_register),
+        4 => SLA(mod_register),
+        5 => SRA(mod_register),
+        6 => SWAP(mod_register),
+        7 => SRL(mod_register),
+        0x08...0x0F => BIT((b - 0x40) / 8, mod_register),
+        0x10...0x17 => RES((b - 0x80) / 8, mod_register),
+        0x18...0x1F => SET((b - 0xC0) / 8, mod_register),
         _ => unreachable!(),
-    }
+    }, 8 * mod_mult)
 }
 
 fn lookup_mod_register(b: u8) -> Register {
