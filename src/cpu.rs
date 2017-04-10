@@ -19,8 +19,16 @@ pub struct Cpu {
     pub cart_rom: Vec<u8>,
     pub has_booted: bool,
     pub interrupt_master_enabled: bool,
-    curr_clocks: u32,
-    curr_freq_clocks: u32,
+    pub curr_clocks: u32,
+    pub curr_freq_clocks: u32,
+    pub key_a: bool,
+    pub key_b: bool,
+    pub key_select: bool,
+    pub key_start: bool,
+    pub key_up: bool,
+    pub key_down: bool,
+    pub key_left: bool,
+    pub key_right: bool,
 }
 
 impl Cpu {
@@ -121,6 +129,14 @@ impl Default for Cpu {
             cart_rom: Vec::new(),
             curr_clocks: 0,
             curr_freq_clocks: 0,
+            key_a: false,
+            key_b: false,
+            key_select: false,
+            key_start: false,
+            key_up: false,
+            key_down: false,
+            key_left: false,
+            key_right: false,
         }
     }
 }
@@ -133,6 +149,7 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
             !LCDC::Power.is_set(cpu) ||
             (ScreenMode::HBlank.is_set(cpu) || ScreenMode::VBlank.is_set(cpu))
         } 
+        0x0150...0x7FFF => false, //ROM, incorporate bank switching in the future
         0xFEA0...0xFEFF => false, //Unused memory
         _ => true,
     };
@@ -147,10 +164,16 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                 println!("==================BOOTED==================");
             }
             0xFF44 => write_address(address, 0, cpu),
+            0xFF00 => write_joypad(val, cpu),
 
             _ => write_address(address, val, cpu),
         }
     }
+}
+
+fn write_joypad(new_val: u8, cpu: &mut Cpu) {
+    let val = read_joypad(cpu);
+    write_address(0xFF00, (new_val & 0xF0) | val & 0x0F, cpu);
 }
 
 pub fn write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
@@ -180,10 +203,24 @@ pub fn safe_read_address(address: usize, cpu: &mut Cpu) -> u8 {
         match address {
             0xE000...0xFDFF => read_address(address - 0x1000, cpu),
             0xFF41 => read_stat_address(cpu), 
+            0xFF00 => read_joypad(cpu),
             _ => read_address(address, cpu),
         }
     } else {
         0xFF
+    }
+}
+
+pub fn read_joypad(cpu: &mut Cpu) -> u8 {
+    let val = read_address(0xFF00, cpu);
+    if ((val >> 4) & 1) != 0 {
+        ((val & 0xF0) | 0xF) - ((cpu.key_start as u8) << 3) - ((cpu.key_select as u8) << 2) -
+        ((cpu.key_b as u8) << 1) - (cpu.key_a as u8)
+    } else if ((val >> 5) & 1) != 0 {
+        ((val & 0xF0) | 0xF) - ((cpu.key_down as u8) << 3) - ((cpu.key_up as u8) << 2) -
+        ((cpu.key_left as u8) << 1) - (cpu.key_right as u8)
+    } else {
+        0x0F
     }
 }
 

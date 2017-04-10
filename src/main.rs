@@ -57,17 +57,40 @@ fn run_rom() {
     let frame_cycles = 70224;
     let mut screen_buffer = [image::Rgba([0x7F, 0x85, 0x51, 255]); 256 * 256];
     while let Some(e) = window.next() {
+        if let Some(Button::Keyboard(key)) = e.press_args() {
+            match key {
+                Key::A => cpu.key_start = true,
+                Key::S => cpu.key_select = true,
+                Key::D => cpu.key_b = true,
+                Key::F => cpu.key_a = true,
+                Key::Up => cpu.key_up = true,
+                Key::Down => cpu.key_down = true,
+                Key::Left => cpu.key_left = true,
+                Key::Right => cpu.key_right = true,
+                _ => {}
+            };
+        };
+        if let Some(Button::Keyboard(key)) = e.release_args() {
+            match key {
+                Key::A => cpu.key_start = false,
+                Key::S => cpu.key_select = false,
+                Key::D => cpu.key_b = false,
+                Key::F => cpu.key_a = false,
+                Key::Up => cpu.key_up = false,
+                Key::Down => cpu.key_down = false,
+                Key::Left => cpu.key_left = false,
+                Key::Right => cpu.key_right = false,
+                _ => {}
+            };
+        };
         if let Some(_) = e.render_args() {
             while !lcd::LCDC::Power.is_set(&mut cpu) || frame_mod_cycles < frame_cycles {
                 if lcd::LCDC::Power.is_set(&mut cpu) {
                     tick_mod_cycles = true
                 }
                 let (op_length, instr, cycles) = opcode::lookup_op(next_addr, &mut cpu);
-                if false && cpu.has_booted && next_addr != 0xC7D2 {
-                    println!("Address {:4>0X}: {:?} taking {:?} cycles",
-                             next_addr,
-                             instr,
-                             cycles);
+                if false && cpu.has_booted {
+                    println!("0x{:4>0X}:\t{:?}", next_addr, instr);
                 }
 
                 next_addr += op_length;

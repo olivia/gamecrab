@@ -136,6 +136,7 @@ pub fn write_bg_tile(tile_num: usize,
     }
 }
 
+// todo add flipping
 pub fn write_sprite_tile(tile_num: usize,
                          x: isize,
                          y: isize,
