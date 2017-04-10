@@ -2,12 +2,13 @@ extern crate image;
 use cpu::*;
 use lcd::*;
 
-pub fn render_frame(canvas: &mut image::ImageBuffer<image::Rgba<u8>, Vec<u8>>, cpu: &mut Cpu) {
-    let mut screen_buffer = [get_color(0); 256 * 256];
+pub fn render_frame(screen_buffer: &mut [image::Rgba<u8>; 256 * 256],
+                    canvas: &mut image::ImageBuffer<image::Rgba<u8>, Vec<u8>>,
+                    cpu: &mut Cpu) {
     if LCDC::Power.is_set(cpu) {
-        write_background(&mut screen_buffer, cpu);
-        write_window(&mut screen_buffer, cpu);
-        write_sprites(&mut screen_buffer, cpu);
+        write_background(screen_buffer, cpu);
+        write_window(screen_buffer, cpu);
+        write_sprites(screen_buffer, cpu);
         buffer_to_image_buffer(canvas, screen_buffer)
     } else {
         println!("turned off");
@@ -197,7 +198,7 @@ pub fn lookup_color_idx(address: usize, pallete_idx: u8, cpu: &mut Cpu) -> u8 {
 }
 
 pub fn buffer_to_image_buffer(canvas: &mut image::ImageBuffer<image::Rgba<u8>, Vec<u8>>,
-                              buffer: [image::Rgba<u8>; 256 * 256]) {
+                              buffer: &mut [image::Rgba<u8>; 256 * 256]) {
     for (x, y, pixel) in canvas.enumerate_pixels_mut() {
         let idx = x + 256 * y;
         *pixel = buffer[idx as usize];

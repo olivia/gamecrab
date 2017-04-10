@@ -115,7 +115,7 @@ impl Default for Cpu {
             sp: 0,
             pc: 0,
             has_booted: false,
-            interrupt_master_enabled: true,
+            interrupt_master_enabled: false,
             memory: [0; 0x10000],
             boot_rom: Vec::new(),
             cart_rom: Vec::new(),
@@ -142,7 +142,10 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
             0xFF04 => cpu.memory[address] = 0,
             0xFF46 => dma_transfer(val, cpu), //this needs to be synced with clocks
             0xFF41 => write_stat_address(val, cpu),
-            0xFF50 => cpu.has_booted = true,
+            0xFF50 => {
+                cpu.has_booted = true;
+                println!("==================BOOTED==================");
+            }
             0xFF44 => write_address(address, 0, cpu),
 
             _ => write_address(address, val, cpu),
@@ -157,9 +160,9 @@ pub fn write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
 }
 
 fn dma_transfer(val: u8, cpu: &mut Cpu) {
-    let source_addr = (val as u16) << 8;
+    let source_addr = (val as usize) << 8;
     for (i, addr) in (source_addr..(source_addr | 0xA0)).enumerate() {
-        cpu.memory[0xFE00 + i] = cpu.memory[addr as usize];
+        cpu.memory[0xFE00 + i] = cpu.memory[addr];
     }
 }
 

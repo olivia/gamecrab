@@ -16,8 +16,19 @@ fn get_gameboy_canvas(scale: u32) -> (u32, u32, image::ImageBuffer<image::Rgba<u
     }
     (width * scale, height * scale, canvas)
 }
+fn disassemble_rom(start: usize, limit: usize) {
+    let mut cpu: cpu::Cpu = Default::default();
+    cpu.load_bootrom("DMG_ROM.bin");
+    cpu.load_cart("test_instrs/01-special.gb");
+    let mut next_addr = start;
+    for _ in 0..limit {
+        let (op_length, instr, cycles) = opcode::lookup_op(next_addr, &mut cpu);
+        println!("0x{:4>0X}:\t{:?}", next_addr, instr);
+        next_addr += op_length;
+    }
+}
 
-fn main() {
+fn run_rom() {
     let opengl = OpenGL::V3_2;
     let mut cpu: cpu::Cpu = Default::default();
     let mut counter = FPSCounter::new();
@@ -35,7 +46,6 @@ fn main() {
     let factory = window.factory.clone();
     let font = "FiraSans-Regular.ttf";
     let mut glyphs = Glyphs::new(font, factory).unwrap();
-
     let mut texture_settings = TextureSettings::new();
     texture_settings.set_filter(Filter::Nearest);
     let mut texture = Texture::from_image(&mut window.factory, &canvas, &texture_settings).unwrap();
@@ -45,6 +55,7 @@ fn main() {
     let mut tick_mod_cycles = false;
     let line_scan_cycles = 456;
     let frame_cycles = 70224;
+    let mut screen_buffer = [image::Rgba([0x7F, 0x85, 0x51, 255]); 256 * 256];
     while let Some(e) = window.next() {
         if let Some(_) = e.render_args() {
             while !lcd::LCDC::Power.is_set(&mut cpu) || frame_mod_cycles < frame_cycles {
@@ -52,7 +63,7 @@ fn main() {
                     tick_mod_cycles = true
                 }
                 let (op_length, instr, cycles) = opcode::lookup_op(next_addr, &mut cpu);
-                if false && cpu.has_booted {
+                if false && cpu.has_booted && next_addr != 0xC7D2 {
                     println!("Address {:4>0X}: {:?} taking {:?} cycles",
                              next_addr,
                              instr,
@@ -83,9 +94,8 @@ fn main() {
             }
             frame_mod_cycles %= frame_cycles;
 
-            ppu::render_frame(&mut frame, &mut cpu);
-            texture.update(&mut window.encoder, &frame)
-                .unwrap();
+            ppu::render_frame(&mut screen_buffer, &mut frame, &mut cpu);
+            texture.update(&mut window.encoder, &frame).unwrap();
             window.draw_2d(&e, |c, g| {
                 let transform = c.transform.trans(10.0, 30.0);
 
@@ -109,5 +119,9 @@ fn main() {
         }
     }
 
+}
 
+fn main() {
+    run_rom();
+    // disassemble_rom(0x38, 100);
 }
