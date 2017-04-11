@@ -25,6 +25,7 @@ pub struct Cpu {
     pub mbc_1: bool,
     pub rom_bank_selected: usize,
     pub dma_transfer_cycles_left: i32,
+    pub halted: bool,
 }
 
 impl Cpu {
@@ -129,6 +130,7 @@ impl Default for Cpu {
             mbc_1: false,
             rom_bank_selected: 1,
             dma_transfer_cycles_left: 0,
+            halted: false,
         }
     }
 }

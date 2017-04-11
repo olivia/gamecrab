@@ -210,7 +210,7 @@ pub fn lookup_op(start: usize, cpu: &mut Cpu) -> (usize, OpCode, usize) {
         0xCC => (3, CALL_C(Cond::Z, read_u16_arg(start, cpu)), 12), // 24/12
         0xDC => (3, CALL_C(Cond::C, read_u16_arg(start, cpu)), 12), // 24/12
         0xCD => (3, CALL(read_u16_arg(start, cpu)), 24),
-        0x76 => (1, HALT, 4),
+        0x76 => (0, HALT, 4),
         0x40 => (1, LD_R(B, B), 4),
         0x41 => (1, LD_R(B, C), 4),
         0x42 => (1, LD_R(B, D), 4),

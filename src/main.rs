@@ -16,6 +16,8 @@ fn get_gameboy_canvas(scale: u32) -> (u32, u32, image::ImageBuffer<image::Rgba<u
     }
     (width * scale, height * scale, canvas)
 }
+
+#[allow(dead_code)]
 fn disassemble_rom(start: usize, limit: usize) {
     let mut cpu: cpu::Cpu = Default::default();
     cpu.load_bootrom("DMG_ROM.bin");
@@ -33,7 +35,7 @@ fn run_rom() {
     let mut cpu: cpu::Cpu = Default::default();
     let mut counter = FPSCounter::new();
     cpu.load_bootrom("DMG_ROM.bin");
-    cpu.load_cart("kirby.gb");
+    cpu.load_cart("sml.gb");
     let mut next_addr = 0;
     let scale = 3;
     let (width, height, canvas) = get_gameboy_canvas(scale);
@@ -73,37 +75,66 @@ fn run_rom() {
         if let Some(_) = e.render_args() {
             let mut lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
             while !lcd_power_on || frame_mod_cycles < frame_cycles {
-                let (op_length, instr, cycles) = opcode::lookup_op(next_addr, &mut cpu);
-                if false && cpu.has_booted {
-                    println!("0x{:4>0X}:\t{:?}", next_addr, instr);
-                }
-
-                next_addr += op_length;
-                let (cycle_offset, new_addr) = instr::exec_instr(instr, next_addr, &mut cpu);
-
-                next_addr = new_addr;
-                lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
-
-                if !lcd_power_on {
-                    mod_cycles = 0;
-                    frame_mod_cycles = 0;
-                    lcd::ScreenMode::VBlank.set(&mut cpu);
-                } else {
-                    mod_cycles += cycles + cycle_offset;
-                    frame_mod_cycles += cycles + cycle_offset;
-                    // Finished ~456 clocks
-                    if mod_cycles > line_scan_cycles {
-                        lcd::increment_ly(&mut cpu);
-                        mod_cycles %= line_scan_cycles;
+                if cpu.halted {
+                    lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
+                    if !lcd_power_on {
+                        mod_cycles = 0;
+                        frame_mod_cycles = 0;
+                        lcd::ScreenMode::VBlank.set(&mut cpu);
+                    } else {
+                        mod_cycles += 4;
+                        frame_mod_cycles += 4;
+                        // Finished ~456 clocks
+                        if mod_cycles > line_scan_cycles {
+                            lcd::increment_ly(&mut cpu);
+                            mod_cycles %= line_scan_cycles;
+                        }
+                        lcd::update_status(frame_mod_cycles, &mut cpu);
                     }
-                    lcd::update_status(frame_mod_cycles, &mut cpu);
+                    cpu.inc_clocks(4);
+                    next_addr = interrupt::exec_halt_interrupts(next_addr, &mut cpu);
+                    lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
+                } else {
+                    let (op_length, instr, cycles) = opcode::lookup_op(next_addr, &mut cpu);
+                    if false && cpu.has_booted {
+                        println!("0x{:4>0X}:\t{:?}", next_addr, instr);
+                    }
+
+                    match instr {
+                        opcode::OpCode::HALT => {
+                            cpu.halted = true;
+                            continue;
+                        }
+                        _ => {}
+                    }
+
+                    next_addr += op_length;
+                    let (cycle_offset, new_addr) = instr::exec_instr(instr, next_addr, &mut cpu);
+
+                    next_addr = new_addr;
+                    lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
+
+                    if !lcd_power_on {
+                        mod_cycles = 0;
+                        frame_mod_cycles = 0;
+                        lcd::ScreenMode::VBlank.set(&mut cpu);
+                    } else {
+                        mod_cycles += cycles + cycle_offset;
+                        frame_mod_cycles += cycles + cycle_offset;
+                        // Finished ~456 clocks
+                        if mod_cycles > line_scan_cycles {
+                            lcd::increment_ly(&mut cpu);
+                            mod_cycles %= line_scan_cycles;
+                        }
+                        lcd::update_status(frame_mod_cycles, &mut cpu);
+                    }
+                    if cpu.dma_transfer_cycles_left > 0 {
+                        cpu.dma_transfer_cycles_left -= (cycles + cycle_offset) as i32;
+                    }
+                    cpu.inc_clocks(cycles + cycle_offset);
+                    next_addr = interrupt::exec_interrupts(next_addr, &mut cpu);
+                    lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
                 }
-                if cpu.dma_transfer_cycles_left > 0 {
-                    cpu.dma_transfer_cycles_left -= (cycles + cycle_offset) as i32;
-                }
-                cpu.inc_clocks(cycles + cycle_offset);
-                next_addr = interrupt::exec_interrupts(next_addr, &mut cpu);
-                lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
             }
             frame_mod_cycles %= frame_cycles;
 
