@@ -16,6 +16,7 @@ pub struct Cpu {
     pub pc: u16,
     pub keys: u8,
     pub memory: [u8; 0x10000],
+    pub ram_memory: [u8; 0x8000],
     pub boot_rom: Vec<u8>,
     pub cart_rom: Vec<u8>,
     pub has_booted: bool,
@@ -23,7 +24,12 @@ pub struct Cpu {
     pub curr_clocks: u32,
     pub curr_freq_clocks: u32,
     pub mbc_1: bool,
-    pub rom_bank_selected: usize,
+    pub mbc_1_ram: bool,
+    pub mbc_1_battery: bool,
+    pub ram_banking_mode: bool,
+    pub ram_enabled: bool,
+    pub ram_or_rom_bank: usize,
+    pub lo_rom_bank: usize,
     pub dma_transfer_cycles_left: i32,
     pub halted: bool,
 }
@@ -122,14 +128,20 @@ impl Default for Cpu {
             has_booted: false,
             interrupt_master_enabled: false,
             memory: [0; 0x10000],
+            ram_memory: [0; 0x8000],
             boot_rom: Vec::new(),
             cart_rom: Vec::new(),
             curr_clocks: 0,
             curr_freq_clocks: 0,
             keys: 0xFF,
             mbc_1: false,
-            rom_bank_selected: 1,
+            mbc_1_ram: false,
+            mbc_1_battery: false,
+            ram_or_rom_bank: 0,
+            lo_rom_bank: 0,
             dma_transfer_cycles_left: 0,
+            ram_enabled: false,
+            ram_banking_mode: false,
             halted: false,
         }
     }
@@ -143,7 +155,7 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
         0x4000...0x5FFF => false, //RAM bank number or high bits of rom bank number
         0x6000...0x7FFF => false, //ROM/RAM select
         0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
-        0xA000...0xBFFF => false, // currently we have no ram, used for selecting raem
+        0xA000...0xBFFF => cpu.ram_enabled, // currently we have no ram, used for selecting raem
         0xFE00...0xFE9F => {
             // OAM
             !LCDC::Power.is_set(cpu) ||
@@ -154,6 +166,7 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
     };
     if safe_to_write {
         match address {
+            0xA000...0xBFFF => write_ram_address(address, val, cpu),
             0xC000...0xDDFF => {
                 write_address(address, val, cpu);
                 write_address(address + 0x2000, val, cpu);
@@ -177,6 +190,17 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                     println!("MBC1 Detected");
                     cpu.mbc_1 = true;
                 }
+                if read_address(0x147, cpu) == 2 {
+                    println!("MBC1+RAM Detected");
+                    cpu.mbc_1 = true;
+                    cpu.mbc_1_ram = true;
+                }
+                if read_address(0x147, cpu) == 3 {
+                    println!("MBC1+RAM+BATTERY Detected");
+                    cpu.mbc_1 = true;
+                    cpu.mbc_1_ram = true;
+                    cpu.mbc_1_battery = true;
+                }
             }
             _ => write_address(address, val, cpu),
         }
@@ -188,8 +212,10 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
             }
         } else {
             match address {
+                0x0000...0x1FFF => cpu.ram_enabled = cpu.mbc_1_ram && ((0xA & val) == 0xA),
                 0x2000...0x3FFF => select_rom_bank_lo(val, cpu),
                 0x4000...0x5FFF => select_rom_or_ram_bank_hi(val, cpu),
+                0x6000...0x7FFF => cpu.ram_banking_mode = val == 1,
                 _ => {}
             }
         }
@@ -197,33 +223,25 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
 }
 
 fn select_rom_bank_lo(bank: u8, cpu: &mut Cpu) {
-    let part_bank = (cpu.rom_bank_selected & 0xE0) | ((bank as usize) & 0x1F);
-    let new_bank = match part_bank {
-        0x00 => 0x01,
-        0x20 => 0x21,
-        0x40 => 0x41,
-        0x60 => 0x61,
-        _ => part_bank,
-    };
-    cpu.rom_bank_selected = new_bank;
+    cpu.lo_rom_bank = (bank as usize) & 0x1F;
 }
 
 fn select_rom_or_ram_bank_hi(bank: u8, cpu: &mut Cpu) {
-    let part_bank = (cpu.rom_bank_selected & 0x1F) | (((bank as usize) & 0b11) << 5);
-    let new_bank = match part_bank {
-        0x00 => 0x01,
-        0x20 => 0x21,
-        0x40 => 0x41,
-        0x60 => 0x61,
-        _ => part_bank,
-    };
-    cpu.rom_bank_selected = new_bank;
-
+    cpu.ram_or_rom_bank = (bank & 0b11) as usize;
 }
 
 fn write_joypad(new_val: u8, cpu: &mut Cpu) {
     let val = read_joypad(cpu);
     write_address(0xFF00, (new_val & 0xF0) | val & 0x0F, cpu);
+}
+
+pub fn write_ram_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
+    let ram_bank = if cpu.ram_banking_mode {
+        cpu.ram_or_rom_bank
+    } else {
+        0
+    };
+    cpu.ram_memory[address - 0xA000 + ram_bank * 0x2000] = val;
 }
 
 pub fn write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
@@ -283,6 +301,7 @@ pub fn read_address(address: usize, cpu: &mut Cpu) -> u8 {
     match address {
         0...0x00FF => read_overlap_address(address, cpu),
         0x0100...0x3FFF => read_cart_address(address, cpu),
+        0xA000...0xBFFF => read_ram_address(address, cpu),
         0x4000...0x7FFF => read_bank_address(address, cpu),
         _ => cpu.memory[address],
     }
@@ -299,13 +318,43 @@ pub fn read_overlap_address(address: usize, cpu: &mut Cpu) -> u8 {
     }
 }
 
+fn get_selected_rom_bank(cpu: &mut Cpu) -> usize {
+    let hi_bank = if !cpu.ram_banking_mode {
+        cpu.ram_or_rom_bank << 5
+    } else {
+        0
+    };
+    let part_bank = hi_bank | cpu.lo_rom_bank;
+    match part_bank {
+        0x00 => 0x01,
+        0x20 => 0x21,
+        0x40 => 0x41,
+        0x60 => 0x61,
+        _ => part_bank,
+    }
+}
+
 pub fn read_cart_address(address: usize, cpu: &mut Cpu) -> u8 {
     cpu.cart_rom[address]
 }
 
+pub fn read_ram_address(address: usize, cpu: &mut Cpu) -> u8 {
+    if cpu.ram_enabled {
+        let ram_bank = if cpu.ram_banking_mode {
+            cpu.ram_or_rom_bank
+        } else {
+            0
+        };
+        cpu.ram_memory[address - 0xA000 + 0x2000 * ram_bank]
+    } else {
+        0
+    }
+}
+
 pub fn read_bank_address(address: usize, cpu: &mut Cpu) -> u8 {
     if cpu.mbc_1 {
-        cpu.cart_rom[address + 0x4000 * (cpu.rom_bank_selected - 1)]
+        let bank = get_selected_rom_bank(cpu);
+        cpu.cart_rom[address + 0x4000 * (bank - 1)]
     } else {
         cpu.cart_rom[address]
     }
