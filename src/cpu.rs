@@ -14,6 +14,7 @@ pub struct Cpu {
     pub l: u8,
     pub sp: u16,
     pub pc: u16,
+    pub keys: u8,
     pub memory: [u8; 0x10000],
     pub boot_rom: Vec<u8>,
     pub cart_rom: Vec<u8>,
@@ -21,14 +22,9 @@ pub struct Cpu {
     pub interrupt_master_enabled: bool,
     pub curr_clocks: u32,
     pub curr_freq_clocks: u32,
-    pub key_a: bool,
-    pub key_b: bool,
-    pub key_select: bool,
-    pub key_start: bool,
-    pub key_up: bool,
-    pub key_down: bool,
-    pub key_left: bool,
-    pub key_right: bool,
+    pub mbc_1: bool,
+    pub rom_bank_selected: usize,
+    pub dma_transfer_cycles_left: i32,
 }
 
 impl Cpu {
@@ -52,7 +48,6 @@ impl Cpu {
         }
 
         if TAC::Enabled.is_set(self) {
-            println!("increment div");
             // increment
             self.curr_freq_clocks += clocks as u32;
             let freq = get_tac_freq(self);
@@ -64,11 +59,12 @@ impl Cpu {
                 if tima == 0xFF {
                     write_address(0xFF05, tma, self);
                     Interrupt::Timer.request(self);
-                    println!("Overflow");
                 } else {
                     write_address(0xFF05, tima + 1, self);
                 }
             }
+        } else {
+            self.curr_freq_clocks = 0;
         }
     }
 }
@@ -129,46 +125,98 @@ impl Default for Cpu {
             cart_rom: Vec::new(),
             curr_clocks: 0,
             curr_freq_clocks: 0,
-            key_a: false,
-            key_b: false,
-            key_select: false,
-            key_start: false,
-            key_up: false,
-            key_down: false,
-            key_left: false,
-            key_right: false,
+            keys: 0xFF,
+            mbc_1: false,
+            rom_bank_selected: 1,
+            dma_transfer_cycles_left: 0,
         }
     }
 }
 
 pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
-    let safe_to_write = match address {
+    let safe_to_write = cpu.dma_transfer_cycles_left <= 0 &&
+                        match address {
+        0x0000...0x1FFF => false, // used for enabling ram bank
+        0x2000...0x3FFF => false, //ROM bank number
+        0x4000...0x5FFF => false, //RAM bank number or high bits of rom bank number
+        0x6000...0x7FFF => false, //ROM/RAM select
         0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
+        0xA000...0xBFFF => false, // currently we have no ram, used for selecting raem
         0xFE00...0xFE9F => {
             // OAM
             !LCDC::Power.is_set(cpu) ||
             (ScreenMode::HBlank.is_set(cpu) || ScreenMode::VBlank.is_set(cpu))
         } 
-        0x0150...0x7FFF => false, //ROM, incorporate bank switching in the future
         0xFEA0...0xFEFF => false, //Unused memory
         _ => true,
     };
     if safe_to_write {
         match address {
-            0xE000...0xFDFF => write_address(address - 0x1000, val, cpu),
-            0xFF04 => cpu.memory[address] = 0,
-            0xFF46 => dma_transfer(val, cpu), //this needs to be synced with clocks
+            0xC000...0xDDFF => {
+                write_address(address, val, cpu);
+                write_address(address + 0x2000, val, cpu);
+            }
+            0xE000...0xFDFF => {
+                write_address(address, val, cpu);
+                write_address(address - 0x2000, val, cpu)
+            }
+            0xFF00 => write_joypad(val, cpu),
+            0xFF04 => write_address(address, 0, cpu),
+            0xFF40 => write_lcdc_address(val, cpu),
             0xFF41 => write_stat_address(val, cpu),
+            0xFF44 => write_address(address, 0, cpu),
+            0xFF46 => dma_transfer(val, cpu), //this needs to be synced with clocks
             0xFF50 => {
                 cpu.has_booted = true;
                 println!("==================BOOTED==================");
+                println!("0x0147: {:4>0X} (cartridge type)", read_address(0x147, cpu));
+                write_address(0xFF00, 0xCF, cpu);
+                if read_address(0x147, cpu) == 1 {
+                    println!("MBC1 Detected");
+                    cpu.mbc_1 = true;
+                }
             }
-            0xFF44 => write_address(address, 0, cpu),
-            0xFF00 => write_joypad(val, cpu),
-
             _ => write_address(address, val, cpu),
         }
+    } else {
+        if cpu.dma_transfer_cycles_left > 0 {
+            match address {
+                0xFF80...0xFFFE => write_address(address, val, cpu),
+                _ => {}
+            }
+        } else {
+            match address {
+                0x2000...0x3FFF => select_rom_bank_lo(val, cpu),
+                0x4000...0x5FFF => select_rom_or_ram_bank_hi(val, cpu),
+                _ => {}
+            }
+        }
     }
+}
+
+fn select_rom_bank_lo(bank: u8, cpu: &mut Cpu) {
+    let part_bank = (cpu.rom_bank_selected & 0xE0) | ((bank as usize) & 0x1F);
+    let new_bank = match part_bank {
+        0x00 => 0x01,
+        0x20 => 0x21,
+        0x40 => 0x41,
+        0x60 => 0x61,
+        _ => part_bank,
+    };
+    cpu.rom_bank_selected = new_bank;
+}
+
+fn select_rom_or_ram_bank_hi(bank: u8, cpu: &mut Cpu) {
+    let part_bank = (cpu.rom_bank_selected & 0x1F) | (((bank as usize) & 0b11) << 5);
+    let new_bank = match part_bank {
+        0x00 => 0x01,
+        0x20 => 0x21,
+        0x40 => 0x41,
+        0x60 => 0x61,
+        _ => part_bank,
+    };
+    cpu.rom_bank_selected = new_bank;
+
 }
 
 fn write_joypad(new_val: u8, cpu: &mut Cpu) {
@@ -178,19 +226,23 @@ fn write_joypad(new_val: u8, cpu: &mut Cpu) {
 
 pub fn write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
     match address {
+        0x2000...0x3FFF => select_rom_bank_lo(val, cpu),
+        0x4000...0x5FFF => select_rom_or_ram_bank_hi(val, cpu),
         _ => cpu.memory[address] = val,
     }
 }
 
 fn dma_transfer(val: u8, cpu: &mut Cpu) {
     let source_addr = (val as usize) << 8;
+    cpu.dma_transfer_cycles_left = 162 * 4;
     for (i, addr) in (source_addr..(source_addr | 0xA0)).enumerate() {
-        cpu.memory[0xFE00 + i] = cpu.memory[addr];
+        write_address(0xFE00 + i, read_address(addr, cpu), cpu);
     }
 }
 
 pub fn safe_read_address(address: usize, cpu: &mut Cpu) -> u8 {
-    let safe_to_read = match address {
+    let safe_to_read = cpu.dma_transfer_cycles_left <= 0 &&
+                       match address {
         0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
         0xFEA0...0xFEFF => false,
         0xFE00...0xFE9F => {
@@ -201,24 +253,25 @@ pub fn safe_read_address(address: usize, cpu: &mut Cpu) -> u8 {
     };
     if safe_to_read {
         match address {
-            0xE000...0xFDFF => read_address(address - 0x1000, cpu),
+            0xE000...0xFDFF => read_address(address - 0x2000, cpu),
             0xFF41 => read_stat_address(cpu), 
             0xFF00 => read_joypad(cpu),
             _ => read_address(address, cpu),
         }
     } else {
-        0xFF
+        match address {
+            0xFF80...0xFFFE => read_address(address, cpu),
+            _ => 0xFF,
+        }
     }
 }
 
 pub fn read_joypad(cpu: &mut Cpu) -> u8 {
     let val = read_address(0xFF00, cpu);
     if ((val >> 4) & 1) != 0 {
-        ((val & 0xF0) | 0xF) - ((cpu.key_start as u8) << 3) - ((cpu.key_select as u8) << 2) -
-        ((cpu.key_b as u8) << 1) - (cpu.key_a as u8)
+        (val & 0xF0) | (0xF & cpu.keys)
     } else if ((val >> 5) & 1) != 0 {
-        ((val & 0xF0) | 0xF) - ((cpu.key_down as u8) << 3) - ((cpu.key_up as u8) << 2) -
-        ((cpu.key_left as u8) << 1) - (cpu.key_right as u8)
+        (val & 0xF0) | ((0xF0 & cpu.keys) >> 4)
     } else {
         0x0F
     }
@@ -227,7 +280,8 @@ pub fn read_joypad(cpu: &mut Cpu) -> u8 {
 pub fn read_address(address: usize, cpu: &mut Cpu) -> u8 {
     match address {
         0...0x00FF => read_overlap_address(address, cpu),
-        0x0100...0x7FFF => read_cart_address(address, cpu),
+        0x0100...0x3FFF => read_cart_address(address, cpu),
+        0x4000...0x7FFF => read_bank_address(address, cpu),
         _ => cpu.memory[address],
     }
 }
@@ -247,16 +301,24 @@ pub fn read_cart_address(address: usize, cpu: &mut Cpu) -> u8 {
     cpu.cart_rom[address]
 }
 
+pub fn read_bank_address(address: usize, cpu: &mut Cpu) -> u8 {
+    if cpu.mbc_1 {
+        cpu.cart_rom[address + 0x4000 * (cpu.rom_bank_selected - 1)]
+    } else {
+        cpu.cart_rom[address]
+    }
+}
+
 pub fn stack_push(val: u16, cpu: &mut Cpu) -> () {
     let (l_byte, r_byte) = ((val >> 8) as u8, (0x00FF & val) as u8);
     cpu.sp = cpu.sp.wrapping_sub(2);
-    cpu.memory[cpu.sp as usize] = r_byte;
-    cpu.memory[(cpu.sp.wrapping_add(1)) as usize] = l_byte;
+    safe_write_address(cpu.sp as usize, r_byte, cpu);
+    safe_write_address(cpu.sp.wrapping_add(1) as usize, l_byte, cpu);
 }
 
 pub fn stack_pop(cpu: &mut Cpu) -> u16 {
-    let r_byte = cpu.memory[cpu.sp as usize] as u16;
-    let l_byte = cpu.memory[(cpu.sp + 1) as usize] as u16;
+    let r_byte = safe_read_address(cpu.sp as usize, cpu) as u16;
+    let l_byte = safe_read_address(cpu.sp.wrapping_add(1) as usize, cpu) as u16;
     cpu.sp = cpu.sp.wrapping_add(2);
     let res = (l_byte << 8) + r_byte;
     res

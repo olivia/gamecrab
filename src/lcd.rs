@@ -35,24 +35,22 @@ impl LCDC {
 }
 
 pub fn update_status(frames: usize, cpu: &mut Cpu) {
-    if LCDC::Power.is_set(cpu) {
-        let ly = read_address(0xFF44, cpu);
-        if ly >= 144 {
-            ScreenMode::VBlank.set(cpu);
-        } else {
-            let (interrupt_enabled, new_mode) = match frames % 456 {
-                0...202 => (stat_is_set(STAT::Mode0HBlankCheck, cpu), ScreenMode::HBlank),
-                203...283 => (stat_is_set(STAT::Mode2OAMCheck, cpu), ScreenMode::Searching),
-                284...455 => (false, ScreenMode::Transferring),
-                _ => unreachable!(),
-            };
+    let ly = read_address(0xFF44, cpu);
+    if ly >= 144 {
+        ScreenMode::VBlank.set(cpu);
+    } else {
+        let (interrupt_enabled, new_mode) = match frames % 456 {
+            0...202 => (stat_is_set(STAT::Mode0HBlankCheck, cpu), ScreenMode::HBlank),
+            203...283 => (stat_is_set(STAT::Mode2OAMCheck, cpu), ScreenMode::Searching),
+            284...455 => (false, ScreenMode::Transferring),
+            _ => unreachable!(),
+        };
 
-            if !new_mode.is_set(cpu) {
-                if interrupt_enabled && cpu.interrupt_master_enabled {
-                    Interrupt::LCD.request(cpu);
-                }
-                new_mode.set(cpu);
+        if !new_mode.is_set(cpu) {
+            if interrupt_enabled && cpu.interrupt_master_enabled {
+                Interrupt::LCD.request(cpu);
             }
+            new_mode.set(cpu);
         }
     }
 
@@ -132,8 +130,17 @@ pub fn read_stat_address(cpu: &mut Cpu) -> u8 {
     if LCDC::Power.is_set(cpu) {
         val
     } else {
-        val & (0xFF - 0b111)
+        (val & (0xFF - 0b11)) | 1
     }
+}
+
+pub fn write_lcdc_address(val: u8, cpu: &mut Cpu) {
+    // Turning off lcd
+    if (val & 0x80) == 0 {
+        // reset LY
+        write_address(0xFF44, 0, cpu);
+    }
+    write_address(0xFF40, val, cpu);
 }
 
 pub fn write_stat_address(val: u8, cpu: &mut Cpu) {

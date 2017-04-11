@@ -7,3 +7,4 @@ pub mod lcd;
 pub mod ppu;
 pub mod interrupt;
 pub mod utility;
+pub mod joypad;

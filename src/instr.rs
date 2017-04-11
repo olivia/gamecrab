@@ -171,25 +171,22 @@ pub fn bit(bit_pos: u8, reg: Register, cpu: &mut Cpu) -> () {
 
 pub fn daa(curr_addr: usize, cpu: &mut Cpu) -> usize {
     let mut a_val = cpu.a as u16;
-    let n_flag = if flag::is_set(Flag::N, cpu) { 1 } else { 0 };
-    let h_flag = if flag::is_set(Flag::H, cpu) { 1 } else { 0 };
-    let c_flag = if flag::is_set(Flag::C, cpu) { 1 } else { 0 };
-    let hi_n = a_val >> 4;
+    let h_flag = flag::is_set(Flag::H, cpu);
+    let c_flag = flag::is_set(Flag::C, cpu);
     let low_n = a_val & 0xF;
-    let mut new_c = 0;
 
     if !flag::is_set(Flag::N, cpu) {
-        if h_flag == 1 || low_n > 9 {
+        if h_flag || low_n > 9 {
             a_val = a_val.wrapping_add(0x06);
         }
-        if c_flag == 1 || a_val > 0x9F {
+        if c_flag || a_val > 0x9F {
             a_val = a_val.wrapping_add(0x60);
         }
     } else {
-        if h_flag == 1 {
+        if h_flag {
             a_val = a_val.wrapping_sub(6) & 0xFF;
         }
-        if c_flag == 1 {
+        if c_flag {
             a_val = a_val.wrapping_sub(0x60);
         }
     }
@@ -240,7 +237,7 @@ pub fn rlc(reg: Register, conditional_z: bool, cpu: &mut Cpu) {
 pub fn rr(reg: Register, conditional_z: bool, cpu: &mut Cpu) {
     let old_c_bit = if flag::is_set(Flag::C, cpu) { 1 } else { 0 };
     let new_c_bit = read_register(reg, cpu) & 1;
-    write_register(reg, read_register(reg, cpu) >> 1 + old_c_bit << 7, cpu);
+    write_register(reg, (read_register(reg, cpu) >> 1) + (old_c_bit << 7), cpu);
     flag::bool_set(Flag::Z, conditional_z && read_register(reg, cpu) == 0, cpu);
     flag::bool_set(Flag::C, new_c_bit != 0, cpu);
     flag::reset(Flag::N, cpu);
@@ -277,7 +274,7 @@ pub fn sla(reg: Register, cpu: &mut Cpu) {
 
 pub fn rrc(reg: Register, conditional_z: bool, cpu: &mut Cpu) {
     let new_c_bit = read_register(reg, cpu) & 1;
-    write_register(reg, read_register(reg, cpu) >> 1 + new_c_bit << 7, cpu);
+    write_register(reg, (read_register(reg, cpu) >> 1) + (new_c_bit << 7), cpu);
     flag::bool_set(Flag::Z, conditional_z && read_register(reg, cpu) == 0, cpu);
     flag::bool_set(Flag::C, new_c_bit != 0, cpu);
     flag::reset(Flag::N, cpu);
@@ -363,11 +360,16 @@ pub fn exec_instr(op: OpCode, curr_addr: usize, cpu: &mut Cpu) -> (usize, usize)
             curr_addr
         }
         RES(pos, reg) => {
-            write_register(reg, read_register(reg, cpu) & (0xFF - 1 << pos), cpu);
+            let val = read_register(reg, cpu);
+            let new_val = val & (0xFF - (1 << pos));
+            write_register(reg, new_val, cpu);
             curr_addr
         }
         SET(pos, reg) => {
             write_register(reg, read_register(reg, cpu) | (1 << pos), cpu);
+            let val = read_register(reg, cpu);
+            let new_val = val | (1 << pos);
+            write_register(reg, new_val, cpu);
             curr_addr
         }
         JP(addr) => addr as usize,
