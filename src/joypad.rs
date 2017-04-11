@@ -7,10 +7,10 @@ pub fn joypad_bit(key: Key) -> (bool, u8) {
         Key::S => 2, // select
         Key::D => 1, // b
         Key::F => 0, // a
-        Key::Down => 7, // down
-        Key::Up => 6, // down,
-        Key::Left => 5,
-        Key::Right => 4,
+        Key::J => 7, // down
+        Key::K => 6, // up,
+        Key::H => 5, //left
+        Key::L => 4, //right
         _ => 8,
     };
     (pos != 8, 1 << (pos % 8))

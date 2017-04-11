@@ -1,7 +1,10 @@
+extern crate nfd;
 use std::fs::File;
 use std::io::prelude::*;
 use interrupt::*;
 use lcd::*;
+use std::path::Path;
+use self::nfd::Response;
 
 pub struct Cpu {
     pub a: u8,
@@ -19,6 +22,7 @@ pub struct Cpu {
     pub ram_memory: [u8; 0x8000],
     pub boot_rom: Vec<u8>,
     pub cart_rom: Vec<u8>,
+    pub cart_loaded: bool,
     pub has_booted: bool,
     pub interrupt_master_enabled: bool,
     pub curr_clocks: u32,
@@ -40,9 +44,24 @@ impl Cpu {
         f.read_to_end(&mut self.boot_rom).ok();
     }
 
-    pub fn load_cart(&mut self, path: &str) {
-        let mut f = File::open(path).unwrap();
+    pub fn load_cart(&mut self, default_rom_path: &str) {
+        let file_path = if Path::new(default_rom_path).exists() {
+            default_rom_path.to_string()
+        } else {
+            let result = nfd::dialog()
+                .default_path("./")
+                .filter("gb")
+                .open()
+                .unwrap();
+            match result {
+                Response::Okay(path) => path,
+                _ => return,
+            }
+        };
+
+        let mut f = File::open(file_path).unwrap();
         f.read_to_end(&mut self.cart_rom).ok();
+        self.cart_loaded = true;
     }
 
     pub fn inc_clocks(&mut self, clocks: usize) {
@@ -125,6 +144,7 @@ impl Default for Cpu {
             l: 0,
             sp: 0,
             pc: 0,
+            cart_loaded: false,
             has_booted: false,
             interrupt_master_enabled: false,
             memory: [0; 0x10000],
@@ -148,22 +168,23 @@ impl Default for Cpu {
 }
 
 pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
-    let safe_to_write = cpu.dma_transfer_cycles_left <= 0 &&
-                        match address {
-        0x0000...0x1FFF => false, // used for enabling ram bank
-        0x2000...0x3FFF => false, //ROM bank number
-        0x4000...0x5FFF => false, //RAM bank number or high bits of rom bank number
-        0x6000...0x7FFF => false, //ROM/RAM select
-        0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
-        0xA000...0xBFFF => cpu.ram_enabled, // currently we have no ram, used for selecting raem
-        0xFE00...0xFE9F => {
-            // OAM
-            !LCDC::Power.is_set(cpu) ||
-            (ScreenMode::HBlank.is_set(cpu) || ScreenMode::VBlank.is_set(cpu))
-        } 
-        0xFEA0...0xFEFF => false, //Unused memory
-        _ => true,
-    };
+    let safe_to_write =
+        cpu.dma_transfer_cycles_left <= 0 &&
+        match address {
+            0x0000...0x1FFF => false, // used for enabling ram bank
+            0x2000...0x3FFF => false, //ROM bank number
+            0x4000...0x5FFF => false, //RAM bank number or high bits of rom bank number
+            0x6000...0x7FFF => false, //ROM/RAM select
+            0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
+            0xA000...0xBFFF => cpu.ram_enabled, // currently we have no ram, used for selecting raem
+            0xFE00...0xFE9F => {
+                // OAM
+                !LCDC::Power.is_set(cpu) ||
+                (ScreenMode::HBlank.is_set(cpu) || ScreenMode::VBlank.is_set(cpu))
+            } 
+            0xFEA0...0xFEFF => false, //Unused memory
+            _ => true,
+        };
     if safe_to_write {
         match address {
             0xA000...0xBFFF => write_ram_address(address, val, cpu),
@@ -261,16 +282,17 @@ fn dma_transfer(val: u8, cpu: &mut Cpu) {
 }
 
 pub fn safe_read_address(address: usize, cpu: &mut Cpu) -> u8 {
-    let safe_to_read = cpu.dma_transfer_cycles_left <= 0 &&
-                       match address {
-        0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
-        0xFEA0...0xFEFF => false,
-        0xFE00...0xFE9F => {
-            !LCDC::Power.is_set(cpu) ||
-            (ScreenMode::HBlank.is_set(cpu) || ScreenMode::VBlank.is_set(cpu))
-        } 
-        _ => true,
-    };
+    let safe_to_read =
+        cpu.dma_transfer_cycles_left <= 0 &&
+        match address {
+            0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
+            0xFEA0...0xFEFF => false,
+            0xFE00...0xFE9F => {
+                !LCDC::Power.is_set(cpu) ||
+                (ScreenMode::HBlank.is_set(cpu) || ScreenMode::VBlank.is_set(cpu))
+            } 
+            _ => true,
+        };
     if safe_to_read {
         match address {
             0xE000...0xFDFF => read_address(address - 0x2000, cpu),

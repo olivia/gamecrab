@@ -34,10 +34,9 @@ fn run_rom() {
     let opengl = OpenGL::V3_2;
     let mut cpu: cpu::Cpu = Default::default();
     let mut counter = FPSCounter::new();
-    cpu.load_bootrom("DMG_ROM.bin");
-    cpu.load_cart("kirby.gb");
+
     let mut next_addr = 0;
-    let scale = 4;
+    let scale = 6;
     let (width, height, canvas) = get_gameboy_canvas(scale);
     let mut window: PistonWindow = WindowSettings::new("🎮🦀", [width, height])
         .exit_on_esc(true)
@@ -45,6 +44,8 @@ fn run_rom() {
         .build()
         .unwrap();
 
+    cpu.load_bootrom("DMG_ROM.bin");
+    cpu.load_cart("test.gb");
     let factory = window.factory.clone();
     let font = "FiraSans-Regular.ttf";
     let mut glyphs = Glyphs::new(font, factory).unwrap();
@@ -59,6 +60,12 @@ fn run_rom() {
     let mut screen_buffer = [image::Rgba([0x7F, 0x85, 0x51, 255]); 256 * 256];
     while let Some(e) = window.next() {
         if let Some(Button::Keyboard(key)) = e.press_args() {
+            if !cpu.cart_loaded {
+                match key {
+                    Key::O => cpu.load_cart("test.gb"),
+                    _ => {}
+                };
+            }
             let (handle_key, bit_mask) = joypad::joypad_bit(key);
             if handle_key {
                 cpu.keys &= !bit_mask;
@@ -74,14 +81,14 @@ fn run_rom() {
 
         if let Some(_) = e.render_args() {
             let mut lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
-            while !lcd_power_on || frame_mod_cycles < frame_cycles {
+            while cpu.cart_loaded && (!lcd_power_on || frame_mod_cycles < frame_cycles) {
                 if cpu.halted {
-                    lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
                     if !lcd_power_on {
                         mod_cycles = 0;
                         frame_mod_cycles = 0;
                         lcd::ScreenMode::VBlank.set(&mut cpu);
                     } else {
+                        // Incr lcd clock
                         mod_cycles += 4;
                         frame_mod_cycles += 4;
                         // Finished ~456 clocks
@@ -93,7 +100,6 @@ fn run_rom() {
                     }
                     cpu.inc_clocks(4);
                     next_addr = interrupt::exec_halt_interrupts(next_addr, &mut cpu);
-                    lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
                 } else {
                     let (op_length, instr, cycles) = opcode::lookup_op(next_addr, &mut cpu);
                     if false && cpu.has_booted {
