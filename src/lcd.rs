@@ -34,10 +34,11 @@ impl LCDC {
     }
 }
 
-pub fn update_status(frames: usize, cpu: &mut Cpu) {
+pub fn update_status(frames: usize, cpu: &mut Cpu) -> (bool, ScreenMode) {
     let ly = read_address(0xFF44, cpu);
     if ly >= 144 {
         ScreenMode::VBlank.set(cpu);
+        (false, ScreenMode::VBlank)
     } else {
         let (interrupt_enabled, new_mode) = match frames % 456 {
             0...202 => (stat_is_set(STAT::Mode0HBlankCheck, cpu), ScreenMode::HBlank),
@@ -47,11 +48,15 @@ pub fn update_status(frames: usize, cpu: &mut Cpu) {
         };
 
         if !new_mode.is_set(cpu) {
-            if interrupt_enabled && cpu.interrupt_master_enabled {
+            if interrupt_enabled {
                 Interrupt::LCD.request(cpu);
             }
             new_mode.set(cpu);
+            (true, new_mode)
+        } else {
+            (false, new_mode)
         }
+
     }
 
 }
@@ -59,16 +64,14 @@ pub fn update_status(frames: usize, cpu: &mut Cpu) {
 pub fn increment_ly(cpu: &mut Cpu) {
     let val = (read_address(0xFF44, cpu) + 1) % 154;
     write_address(0xFF44, (read_address(0xFF44, cpu) + 1) % 154, cpu);
-    if cpu.interrupt_master_enabled {
-        if val == 144 {
-            Interrupt::VBlank.request(cpu);
-        }
-        if stat_is_set(STAT::Mode1VBlankCheck, cpu) && val == 144 {
-            Interrupt::LCD.request(cpu);
-        }
-        if stat_is_set(STAT::LYLYCCheck, cpu) && val == read_address(0xFF45, cpu) {
-            Interrupt::LCD.request(cpu);
-        }
+    if val == 144 {
+        Interrupt::VBlank.request(cpu);
+    }
+    if stat_is_set(STAT::Mode1VBlankCheck, cpu) && val == 144 {
+        Interrupt::LCD.request(cpu);
+    }
+    if stat_is_set(STAT::LYLYCCheck, cpu) && val == read_address(0xFF45, cpu) {
+        Interrupt::LCD.request(cpu);
     }
 
     // set lcy=ly comparison flag
@@ -90,7 +93,7 @@ pub enum STAT {
     SM(ScreenMode),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum ScreenMode {
     HBlank,
     VBlank,

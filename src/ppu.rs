@@ -57,9 +57,6 @@ pub fn write_background_line(ly: u8, buffer: &mut [u8; 256 * 256], cpu: &mut Cpu
                                cpu);
         }
     } else {
-        for i in 0..256 {
-            // buffer[ly as usize * 256 + i] = 4
-        }
     }
 }
 

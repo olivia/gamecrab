@@ -21,7 +21,8 @@ fn get_gameboy_canvas(scale: u32) -> (u32, u32, image::ImageBuffer<image::Rgba<u
 fn disassemble_rom(start: usize, limit: usize) {
     let mut cpu: cpu::Cpu = Default::default();
     cpu.load_bootrom("DMG_ROM.bin");
-    cpu.load_cart("test_instrs/01-special.gb");
+    cpu.has_booted = true;
+    cpu.load_cart("sml.gb");
     let mut next_addr = start;
     for _ in 0..limit {
         let (op_length, instr, _) = opcode::lookup_op(next_addr, &mut cpu);
@@ -103,12 +104,12 @@ fn run_rom() {
             let mut lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
             while cpu.cart_loaded && (!lcd_power_on || frame_mod_cycles < frame_cycles) {
                 if cpu.halted {
+
                     if !lcd_power_on {
                         mod_cycles = 0;
                         frame_mod_cycles = 0;
                         lcd::ScreenMode::VBlank.set(&mut cpu);
                     } else {
-                        // Incr lcd clock
                         mod_cycles += 4;
                         frame_mod_cycles += 4;
                         // Finished ~456 clocks
@@ -120,8 +121,21 @@ fn run_rom() {
                         }
                         lcd::update_status(frame_mod_cycles, &mut cpu);
                     }
+                    if cpu.dma_transfer_cycles_left > 0 {
+                        cpu.dma_transfer_cycles_left -= 4 as i32;
+                    }
                     cpu.inc_clocks(4);
-                    next_addr = interrupt::exec_halt_interrupts(next_addr, &mut cpu);
+                    let interrupt_addr = interrupt::exec_halt_interrupts(next_addr, &mut cpu);
+                    if !cpu.halted && (interrupt_addr == next_addr + 1) {
+                        mod_cycles += 4;
+                        cpu.inc_clocks(4);
+                        frame_mod_cycles += 4;
+                    } else if !cpu.halted {
+                        mod_cycles += 24;
+                        cpu.inc_clocks(24);
+                        frame_mod_cycles += 24;
+                    }
+                    next_addr = interrupt_addr;
                 } else {
                     let (op_length, instr, cycles) = opcode::lookup_op(next_addr, &mut cpu);
                     if false && cpu.has_booted {
@@ -162,7 +176,13 @@ fn run_rom() {
                         cpu.dma_transfer_cycles_left -= (cycles + cycle_offset) as i32;
                     }
                     cpu.inc_clocks(cycles + cycle_offset);
-                    next_addr = interrupt::exec_interrupts(next_addr, &mut cpu);
+                    let interrupt_addr = interrupt::exec_interrupts(next_addr, &mut cpu);
+                    if next_addr != interrupt_addr {
+                        mod_cycles += 20;
+                        cpu.inc_clocks(20);
+                        frame_mod_cycles += 20;
+                        next_addr = interrupt_addr;
+                    }
                     lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
                 }
             }
@@ -179,6 +199,16 @@ fn run_rom() {
                                                                      &c.draw_state,
                                                                      transform,
                                                                      g);
+
+                text::Text::new_color([0.0, 1.0, 1.0, 1.0], 32)
+                    .draw(&(format!("BG: {:?}, W: {:?}, S: {:?}",
+                                    cpu.background_mode,
+                                    cpu.window_mode,
+                                    cpu.sprite_mode)),
+                          &mut glyphs,
+                          &c.draw_state,
+                          c.transform.trans(50.0, 30.0),
+                          g);
             });
         }
     }
@@ -187,5 +217,5 @@ fn run_rom() {
 
 fn main() {
     run_rom();
-    // disassemble_rom(0x38, 100);
+    // disassemble_rom(0x56, 100);
 }
