@@ -37,7 +37,7 @@ fn run_rom() {
 
     let mut next_addr = 0;
     let scale = 4;
-    let audio = apu::play_audio();
+    //    let audio = apu::play_audio();
     let (width, height, canvas) = get_gameboy_canvas(scale);
     let mut window: PistonWindow = WindowSettings::new("🎮🦀", [width, height])
         .exit_on_esc(true)
@@ -46,7 +46,7 @@ fn run_rom() {
         .unwrap();
     window.set_ups(512);
     cpu.load_bootrom("DMG_ROM.bin");
-    cpu.load_cart("zeldas.gb");
+    cpu.load_cart("smls.gb");
     let factory = window.factory.clone();
     let font = "FiraSans-Regular.ttf";
     let mut glyphs = Glyphs::new(font, factory).unwrap();
@@ -69,6 +69,18 @@ fn run_rom() {
                     _ => {}
                 };
             }
+            match key {
+                Key::D1 => {
+                    cpu.background_mode = (cpu.background_mode + 1) % 3;
+                }
+                Key::D2 => {
+                    cpu.window_mode = (cpu.window_mode + 1) % 3;
+                }
+                Key::D3 => {
+                    cpu.sprite_mode = (cpu.sprite_mode + 1) % 3;
+                }
+                _ => {}
+            };
             let (handle_key, bit_mask) = joypad::joypad_bit(key);
             if handle_key {
                 cpu.keys &= !bit_mask;
@@ -101,6 +113,8 @@ fn run_rom() {
                         frame_mod_cycles += 4;
                         // Finished ~456 clocks
                         if mod_cycles > line_scan_cycles {
+                            let ly = cpu::read_address(0xFF44, &mut cpu);
+                            ppu::render_scanline(ly, &mut screen_buffer, &mut frame, &mut cpu);
                             lcd::increment_ly(&mut cpu);
                             mod_cycles %= line_scan_cycles;
                         }
@@ -137,6 +151,8 @@ fn run_rom() {
                         frame_mod_cycles += cycles + cycle_offset;
                         // Finished ~456 clocks
                         if mod_cycles > line_scan_cycles {
+                            let ly = cpu::read_address(0xFF44, &mut cpu);
+                            ppu::render_scanline(ly, &mut screen_buffer, &mut frame, &mut cpu);
                             lcd::increment_ly(&mut cpu);
                             mod_cycles %= line_scan_cycles;
                         }
@@ -152,7 +168,6 @@ fn run_rom() {
             }
             frame_mod_cycles %= frame_cycles;
 
-            ppu::render_frame(&mut screen_buffer, &mut frame, &mut cpu);
             texture.update(&mut window.encoder, &frame).unwrap();
             window.draw_2d(&e, |c, g| {
                 let transform = c.transform.trans(10.0, 30.0);

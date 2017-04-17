@@ -35,6 +35,9 @@ pub struct Cpu {
     pub ram_or_rom_bank: usize,
     pub lo_rom_bank: usize,
     pub dma_transfer_cycles_left: i32,
+    pub background_mode: u8,
+    pub window_mode: u8,
+    pub sprite_mode: u8,
     pub halted: bool,
 }
 
@@ -163,6 +166,9 @@ impl Default for Cpu {
             ram_enabled: false,
             ram_banking_mode: false,
             halted: false,
+            background_mode: 0,
+            sprite_mode: 0,
+            window_mode: 0,
         }
     }
 }
