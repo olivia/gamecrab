@@ -57,7 +57,7 @@ fn run_rom() {
     let mut frame_mod_cycles = 0;
     let line_scan_cycles = 456;
     let frame_cycles = 70224;
-    let mut screen_buffer = [image::Rgba([0x7F, 0x85, 0x51, 255]); 256 * 256];
+    let mut screen_buffer = [0; 256 * 256];
     while let Some(e) = window.next() {
         if let Some(Button::Keyboard(key)) = e.press_args() {
             if !cpu.cart_loaded {
