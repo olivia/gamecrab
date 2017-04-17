@@ -8,4 +8,5 @@ piston_window = "0.61.0"
 fps_counter = "0.2.0"
 image = "0.12.1"
 time = "0.1"
+sdl2 = "0.29"
 nfd = { git = "https://github.com/saurvs/nfd-rs.git" }

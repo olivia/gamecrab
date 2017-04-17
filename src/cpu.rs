@@ -168,23 +168,22 @@ impl Default for Cpu {
 }
 
 pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
-    let safe_to_write =
-        cpu.dma_transfer_cycles_left <= 0 &&
-        match address {
-            0x0000...0x1FFF => false, // used for enabling ram bank
-            0x2000...0x3FFF => false, //ROM bank number
-            0x4000...0x5FFF => false, //RAM bank number or high bits of rom bank number
-            0x6000...0x7FFF => false, //ROM/RAM select
-            0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
-            0xA000...0xBFFF => cpu.ram_enabled, // currently we have no ram, used for selecting raem
-            0xFE00...0xFE9F => {
-                // OAM
-                !LCDC::Power.is_set(cpu) ||
-                (ScreenMode::HBlank.is_set(cpu) || ScreenMode::VBlank.is_set(cpu))
-            } 
-            0xFEA0...0xFEFF => false, //Unused memory
-            _ => true,
-        };
+    let safe_to_write = cpu.dma_transfer_cycles_left <= 0 &&
+                        match address {
+        0x0000...0x1FFF => false, // used for enabling ram bank
+        0x2000...0x3FFF => false, //ROM bank number
+        0x4000...0x5FFF => false, //RAM bank number or high bits of rom bank number
+        0x6000...0x7FFF => false, //ROM/RAM select
+        0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
+        0xA000...0xBFFF => cpu.ram_enabled, // currently we have no ram, used for selecting raem
+        0xFE00...0xFE9F => {
+            // OAM
+            !LCDC::Power.is_set(cpu) ||
+            (ScreenMode::HBlank.is_set(cpu) || ScreenMode::VBlank.is_set(cpu))
+        } 
+        0xFEA0...0xFEFF => false, //Unused memory
+        _ => true,
+    };
     if safe_to_write {
         match address {
             0xA000...0xBFFF => write_ram_address(address, val, cpu),
@@ -198,6 +197,27 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
             }
             0xFF00 => write_joypad(val, cpu),
             0xFF04 => write_address(address, 0, cpu),
+            0xFF10 => write_address(address, 0, cpu), //NR 10 Sound Mode 1 Sweep Register
+            0xFF11 => write_address(address, 0, cpu), //NR 11 Sound Mode 1 Duty/Sound length
+            0xFF12 => write_address(address, 0, cpu), //NR 12 Sound Mode 1 Envelope
+            0xFF13 => write_address(address, 0, cpu), //NR 12 Sound Mode 1 Frequency lo
+            0xFF14 => write_address(address, 0, cpu), //NR 12 Sound Mode 1 Frequency hi
+            0xFF16 => write_address(address, 0, cpu), //NR 21 Sound Mode 2 Duty/Sound length
+            0xFF17 => write_address(address, 0, cpu), //NR 22 Sound Mode 2 Envelope
+            0xFF18 => write_address(address, 0, cpu), //NR 23 Sound Mode 2 Frequency lo
+            0xFF19 => write_address(address, 0, cpu), //NR 24 Sound Mode 2 Frequency hi
+            0xFF1A => write_address(address, 0, cpu), //NR 30 Sound Mode 3 On/Off
+            0xFF1B => write_address(address, 0, cpu), //NR 31 Sound Mode 3 Sound length
+            0xFF1C => write_address(address, 0, cpu), //NR 32 Sound Mode 3 Select Output Level
+            0xFF1D => write_address(address, 0, cpu), //NR 33 Sound Mode 3 Frequency lo
+            0xFF1E => write_address(address, 0, cpu), //NR 34 Sound Mode 3 Frequency hi
+            0xFF20 => write_address(address, 0, cpu), //NR 41 Sound Mode 4 Sound length
+            0xFF21 => write_address(address, 0, cpu), //NR 42 Sound Mode 4 Envelope
+            0xFF22 => write_address(address, 0, cpu), //NR 43 Sound Mode 4 Polynomial Counter
+            0xFF23 => write_address(address, 0, cpu), //NR 44 Sound Mode 4 Counter
+            0xFF24 => write_address(address, 0, cpu), //NR 50 Channel Control
+            0xFF25 => write_address(address, 0, cpu), //NR 51 Sound Output Terminal
+            0xFF26 => write_address(address, 0, cpu), //NR 52 Sound On/Off
             0xFF40 => write_lcdc_address(val, cpu),
             0xFF41 => write_stat_address(val, cpu),
             0xFF44 => write_address(address, 0, cpu),
@@ -282,17 +302,16 @@ fn dma_transfer(val: u8, cpu: &mut Cpu) {
 }
 
 pub fn safe_read_address(address: usize, cpu: &mut Cpu) -> u8 {
-    let safe_to_read =
-        cpu.dma_transfer_cycles_left <= 0 &&
-        match address {
-            0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
-            0xFEA0...0xFEFF => false,
-            0xFE00...0xFE9F => {
-                !LCDC::Power.is_set(cpu) ||
-                (ScreenMode::HBlank.is_set(cpu) || ScreenMode::VBlank.is_set(cpu))
-            } 
-            _ => true,
-        };
+    let safe_to_read = cpu.dma_transfer_cycles_left <= 0 &&
+                       match address {
+        0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
+        0xFEA0...0xFEFF => false,
+        0xFE00...0xFE9F => {
+            !LCDC::Power.is_set(cpu) ||
+            (ScreenMode::HBlank.is_set(cpu) || ScreenMode::VBlank.is_set(cpu))
+        } 
+        _ => true,
+    };
     if safe_to_read {
         match address {
             0xE000...0xFDFF => read_address(address - 0x2000, cpu),

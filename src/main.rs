@@ -6,7 +6,7 @@ extern crate time;
 use piston_window::*;
 use piston_window::texture::Filter;
 use fps_counter::*;
-use gamecrab::{cpu, opcode, instr, interrupt, joypad, lcd, ppu};
+use gamecrab::{apu, cpu, opcode, instr, interrupt, joypad, lcd, ppu};
 
 fn get_gameboy_canvas(scale: u32) -> (u32, u32, image::ImageBuffer<image::Rgba<u8>, Vec<u8>>) {
     let (width, height) = (160, 144);
@@ -36,16 +36,17 @@ fn run_rom() {
     let mut counter = FPSCounter::new();
 
     let mut next_addr = 0;
-    let scale = 6;
+    let scale = 4;
+    let audio = apu::play_audio();
     let (width, height, canvas) = get_gameboy_canvas(scale);
     let mut window: PistonWindow = WindowSettings::new("🎮🦀", [width, height])
         .exit_on_esc(true)
         .opengl(opengl)
         .build()
         .unwrap();
-
+    window.set_ups(512);
     cpu.load_bootrom("DMG_ROM.bin");
-    cpu.load_cart("test.gb");
+    cpu.load_cart("zeldas.gb");
     let factory = window.factory.clone();
     let font = "FiraSans-Regular.ttf";
     let mut glyphs = Glyphs::new(font, factory).unwrap();
@@ -57,6 +58,8 @@ fn run_rom() {
     let mut frame_mod_cycles = 0;
     let line_scan_cycles = 456;
     let frame_cycles = 70224;
+    let cpu_hz = 4194304;
+    let hz_512_div = 8192;
     let mut screen_buffer = [0; 256 * 256];
     while let Some(e) = window.next() {
         if let Some(Button::Keyboard(key)) = e.press_args() {
@@ -77,6 +80,11 @@ fn run_rom() {
             if handle_key {
                 cpu.keys |= bit_mask;
             }
+        };
+
+        if let Some(_) = e.update_args() {
+            // Do sound stuff
+
         };
 
         if let Some(_) = e.render_args() {
