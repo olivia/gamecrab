@@ -38,7 +38,7 @@ fn run_rom() {
 
     let mut next_addr = 0;
     let scale = 4;
-    //    let audio = apu::play_audio();
+    // let audio = apu::play_audio();
     let (width, height, canvas) = get_gameboy_canvas(scale);
     let mut window: PistonWindow = WindowSettings::new("🎮🦀", [width, height])
         .exit_on_esc(true)

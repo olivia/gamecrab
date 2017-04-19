@@ -38,23 +38,29 @@ pub fn write_background_line(ly: u8, buffer: &mut [u8; 256 * 256], cpu: &mut Cpu
         } else {
             0x8800
         };
-        let scroll_x = read_address(0xFF43, cpu);
-        let scroll_y = read_address(0xFF42, cpu);
-        let start_offset = 32 * (((ly as usize + scroll_y as usize) / 8) % 32) as usize;
+        let scroll_x = read_address(0xFF43, cpu) as usize;
+        let scroll_y = read_address(0xFF42, cpu) as usize;
+        let start_offset = 32 * (((ly as usize + scroll_y) / 8) % 32);
+        let tile_y = (256 + 8 * (start_offset / 32) - scroll_y) % 256;
+
         for offset in start_offset..(start_offset + 32) {
-            let tile_num = if LCDC::Tileset.is_set(cpu) {
-                read_address(start + offset, cpu) as usize
-            } else {
-                (128 as i16 + (read_address(start + offset, cpu) as i8) as i16) as usize
-            };
-            write_bg_tile_line(ly,
-                               tile_num,
-                               (256 + 8 * (offset % 32) as isize - scroll_x as isize) % 256,
-                               (256 + 8 * (offset / 32) as isize - scroll_y as isize) % 256,
-                               tile_map_start,
-                               0xFF47,
-                               buffer,
-                               cpu);
+            let tile_x = (256 + 8 * (offset % 32) - scroll_x) % 256;
+            // Skip painting the tiles that are not visible
+            if tile_x <= 160 || tile_x >= 248 {
+                let tile_num = if LCDC::Tileset.is_set(cpu) {
+                    read_address(start + offset, cpu) as usize
+                } else {
+                    (128 as i16 + (read_address(start + offset, cpu) as i8) as i16) as usize
+                };
+                write_bg_tile_line(ly,
+                                   tile_num,
+                                   tile_x as usize,
+                                   tile_y as usize,
+                                   tile_map_start,
+                                   0xFF47,
+                                   buffer,
+                                   cpu);
+            }
         }
     } else {
     }
@@ -169,25 +175,26 @@ pub fn write_sprites_line(ly: u8, buffer: &mut [u8; 256 * 256], cpu: &mut Cpu) {
 
 pub fn write_bg_tile_line(ly: u8,
                           tile_num: usize,
-                          x: isize,
-                          y: isize,
+                          x: usize,
+                          y: usize,
                           tile_map_start: usize,
                           pallette_address: usize,
                           buffer: &mut [u8; 256 * 256],
                           cpu: &mut Cpu) {
     let address_start = tile_map_start + 16 * tile_num;
-    let row = ((256 + (ly as isize) - y) % 256) as usize;
+    let row = (256 + ly as usize - y) % 256;
     let left_line = read_address(address_start + row * 2, cpu) as u16;
     let right_line = read_address(address_start + row * 2 + 1, cpu) as u16;
+    let y_idx = (y + row) % 256;
+    let buffer_start = 256 * y_idx as usize;
 
     for col in 0..8 {
-        let color_idx = lookup_color_idx(pallette_address,
-                                         ((right_line >> (7 - col) & 1) << 1) as u8 +
-                                         (left_line >> (7 - col) & 1) as u8,
-                                         cpu);
-        let x_idx = (x + col as isize) % 256;
-        let y_idx = (y + row as isize) % 256;
-        let buffer_idx = 256 * y_idx as usize + x_idx as usize;
+        let pos_offset = 7 - col;
+        let color_map_idx = ((right_line >> pos_offset & 1) << 1) as u8 |
+                            (left_line >> pos_offset & 1) as u8;
+        let color_idx = lookup_color_idx(pallette_address, color_map_idx, cpu);
+        let x_idx = (x + col) % 256;
+        let buffer_idx = buffer_start + x_idx;
         buffer[buffer_idx] = color_idx;
     }
 }
@@ -207,7 +214,7 @@ pub fn write_sprite_tile_line(ly: u8,
     let end_col = cmp::max(0, cmp::min(8, 255 - x)) as usize;
 
     let address_start = tile_map_start + 16 * tile_num;
-    let row = ly as usize - y as usize;
+    let row = (ly as isize - y) as usize;
     let normalized_row = if v_flip { 7 - row } else { row };
     let left_line = read_address(address_start + normalized_row * 2, cpu) as u16;
     let right_line = read_address(address_start + normalized_row * 2 + 1, cpu) as u16;
