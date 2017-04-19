@@ -41,6 +41,9 @@ pub enum OpCode {
     LD(Register, u8),
     LD_M(Register, u16),
     LD_R(Register, Register),
+    LD_ADDR_SP(u16),
+    LDHL_SP(i8),
+    LD_SP_HL,
     NOP,
     OR(Register),
     OR_d8(u8),
@@ -160,7 +163,7 @@ pub fn lookup_op(start: usize, cpu: &mut Cpu) -> (usize, OpCode, usize) {
         0x17 => (1, RLA, 4),
         0x27 => (1, DAA, 4),
         0x37 => (1, SCF, 4),
-        0x08 => (3, LD_R(ADDR(read_u16_arg(start, cpu)), SP), 20),
+        0x08 => (3, LD_ADDR_SP(read_u16_arg(start, cpu)), 20),
         0x18 => (2, JR(read_i8_arg(start, cpu)), 4),
         0x28 => (2, JR_C(Cond::Z, read_i8_arg(start, cpu)), 4), // 12/8
         0x38 => (2, JR_C(Cond::C, read_i8_arg(start, cpu)), 4),
@@ -194,19 +197,20 @@ pub fn lookup_op(start: usize, cpu: &mut Cpu) -> (usize, OpCode, usize) {
         0x3A => (1, LD_R(A, HLM), 8),
         0xE0 => (2, LD_R(ADDR(0xFF00 + (read_u8_arg(start, cpu) as u16)), A), 12),
         0xF0 => (2, LD_R(A, ADDR(0xFF00 + (read_u8_arg(start, cpu) as u16))), 12),
-        0xC2 => (3, JP_C(Cond::NZ, read_u16_arg(start, cpu)), 16), // 16/12
+        0xC2 => (3, JP_C(Cond::NZ, read_u16_arg(start, cpu)), 12), // 16/12
         0xC3 => (3, JP(read_u16_arg(start, cpu)), 16),
-        0xD2 => (3, JP_C(Cond::NC, read_u16_arg(start, cpu)), 16), // 16/12
+        0xD2 => (3, JP_C(Cond::NC, read_u16_arg(start, cpu)), 12), // 16/12
         0xE2 => (1, LD_R(CH, A), 8),
         0xF2 => (1, LD_R(A, CH), 8),
         0xF3 => (1, DI, 4),
-        0xD4 => (3, CALL_C(Cond::NC, read_u16_arg(start, cpu)), 24), // 24/12
+        0xC4 => (3, CALL_C(Cond::NZ, read_u16_arg(start, cpu)), 12), // 24/12
+        0xD4 => (3, CALL_C(Cond::NC, read_u16_arg(start, cpu)), 12), // 24/12
         0xCB => get_cb(start, cpu),
         0xFB => (1, EI, 4),
-        0xCC => (3, CALL_C(Cond::Z, read_u16_arg(start, cpu)), 24), // 24/12
-        0xDC => (3, CALL_C(Cond::C, read_u16_arg(start, cpu)), 24), // 24/12
+        0xCC => (3, CALL_C(Cond::Z, read_u16_arg(start, cpu)), 12), // 24/12
+        0xDC => (3, CALL_C(Cond::C, read_u16_arg(start, cpu)), 12), // 24/12
         0xCD => (3, CALL(read_u16_arg(start, cpu)), 24),
-        0x76 => (1, HALT, 4),
+        0x76 => (0, HALT, 4),
         0x40 => (1, LD_R(B, B), 4),
         0x41 => (1, LD_R(B, C), 4),
         0x42 => (1, LD_R(B, D), 4),
@@ -355,11 +359,11 @@ pub fn lookup_op(start: usize, cpu: &mut Cpu) -> (usize, OpCode, usize) {
         0xC8 => (1, RET_C(Cond::Z), 8), // actually 20/8
         0xD8 => (1, RET_C(Cond::C), 8), // actually 20/8
         0xE8 => (2, ADD_r8(SP, read_i8_arg(start, cpu)), 16),
-        0xF8 => (2, LD_R(HL, SP_OFF(read_i8_arg(start, cpu))), 12),
+        0xF8 => (2, LDHL_SP(read_i8_arg(start, cpu)), 12),
         0xC9 => (1, RET, 16),
         0xD9 => (1, RETI, 16),
         0xE9 => (1, JP_HL, 4),
-        0xF9 => (1, LD_R(SP, HL), 8),
+        0xF9 => (1, LD_SP_HL, 8),
         0xCA => (3, JP_C(Cond::Z, read_u16_arg(start, cpu)), 16), // 16/12
         0xDA => (3, JP_C(Cond::C, read_u16_arg(start, cpu)), 16),
         0xEA => (3, LD_R(ADDR(read_u16_arg(start, cpu)), A), 16),
@@ -373,7 +377,7 @@ pub fn lookup_op(start: usize, cpu: &mut Cpu) -> (usize, OpCode, usize) {
         0xEF => (1, RST(0x28), 16),
         0xFF => (1, RST(0x38), 16),
         _ => {
-            println!("{:?}", op_byte);
+            println!("Missing {:4>0X} op", op_byte);
             unreachable!()
         }
     };

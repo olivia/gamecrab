@@ -1,4 +1,5 @@
 use cpu::*;
+use utility::*;
 
 #[derive(Debug, Copy, Clone)]
 #[allow(non_camel_case_types)]
@@ -33,16 +34,17 @@ pub fn read_register(reg: Register, cpu: &mut Cpu) -> u8 {
         A => cpu.a,
         B => cpu.b,
         C => cpu.c,
-        CH => read_address(0xFF00 + read_register(C, cpu) as usize, cpu),
+        CH => safe_read_address(0xFF00 + read_register(C, cpu) as usize, cpu),
         D => cpu.d,
         E => cpu.e,
         F => cpu.f,
         H => cpu.h,
         L => cpu.l,
-        HL_ADDR => read_address(read_multi_register(HL, cpu) as usize, cpu),
-        BC_ADDR => read_address(read_multi_register(BC, cpu) as usize, cpu),
-        DE_ADDR => read_address(read_multi_register(DE, cpu) as usize, cpu),
-        ADDR(addr) => read_address(addr as usize, cpu),
+        HL_ADDR => safe_read_address(read_multi_register(HL, cpu) as usize, cpu),
+        BC_ADDR => safe_read_address(read_multi_register(BC, cpu) as usize, cpu),
+        DE_ADDR => safe_read_address(read_multi_register(DE, cpu) as usize, cpu),
+        ADDR(addr) => safe_read_address(addr as usize, cpu),
+        SP_OFF(offset) => safe_read_address(wrapping_off_u16_i8(cpu.sp, offset) as usize, cpu),
         _ => {
             println!("Failed to read {:?}", reg);
             unreachable!()
@@ -58,7 +60,6 @@ pub fn read_multi_register(reg: Register, cpu: &mut Cpu) -> u16 {
         BC => ((cpu.b as u16) << 8) + (cpu.c as u16),
         DE => ((cpu.d as u16) << 8) + (cpu.e as u16),
         SP => cpu.sp,
-        PC => cpu.pc,
         _ => unreachable!(),
     }
 }
@@ -71,14 +72,14 @@ pub fn write_register(reg: Register, val: u8, cpu: &mut Cpu) -> () {
         C => cpu.c = val,
         D => cpu.d = val,
         E => cpu.e = val,
-        F => cpu.f = val,
+        F => cpu.f = val & 0xF0,
         H => cpu.h = val,
         L => cpu.l = val,
-        CH => write_address(0xFF00 + read_register(C, cpu) as usize, val, cpu),
-        HL_ADDR => write_address(read_multi_register(HL, cpu) as usize, val, cpu),
-        BC_ADDR => write_address(read_multi_register(BC, cpu) as usize, val, cpu),
-        DE_ADDR => write_address(read_multi_register(DE, cpu) as usize, val, cpu),
-        ADDR(address) => write_address(address as usize, val, cpu),
+        CH => safe_write_address(0xFF00 + read_register(C, cpu) as usize, val, cpu),
+        HL_ADDR => safe_write_address(read_multi_register(HL, cpu) as usize, val, cpu),
+        BC_ADDR => safe_write_address(read_multi_register(BC, cpu) as usize, val, cpu),
+        DE_ADDR => safe_write_address(read_multi_register(DE, cpu) as usize, val, cpu),
+        ADDR(address) => safe_write_address(address as usize, val, cpu),
         _ => unreachable!(),
     }
 }
@@ -93,7 +94,7 @@ pub fn write_multi_register(reg: Register, val: u16, cpu: &mut Cpu) -> () {
         }
         AF => {
             cpu.a = l_byte;
-            cpu.f = r_byte;
+            cpu.f = r_byte & 0xF0;
         }
         BC => {
             cpu.b = l_byte;

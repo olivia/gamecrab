@@ -34,11 +34,53 @@ impl LCDC {
     }
 }
 
+pub fn update_status(frames: usize, cpu: &mut Cpu) -> (bool, ScreenMode) {
+    let ly = read_address(0xFF44, cpu);
+    if ly >= 144 {
+        ScreenMode::VBlank.set(cpu);
+        (false, ScreenMode::VBlank)
+    } else {
+        let (interrupt_enabled, new_mode) = match frames % 456 {
+            0...202 => (stat_is_set(STAT::Mode0HBlankCheck, cpu), ScreenMode::HBlank),
+            203...283 => (stat_is_set(STAT::Mode2OAMCheck, cpu), ScreenMode::Searching),
+            284...455 => (false, ScreenMode::Transferring),
+            _ => unreachable!(),
+        };
+
+        if !new_mode.is_set(cpu) {
+            if interrupt_enabled {
+                Interrupt::LCD.request(cpu);
+            }
+            new_mode.set(cpu);
+            (true, new_mode)
+        } else {
+            (false, new_mode)
+        }
+
+    }
+
+}
+
 pub fn increment_ly(cpu: &mut Cpu) {
     let val = (read_address(0xFF44, cpu) + 1) % 154;
     write_address(0xFF44, (read_address(0xFF44, cpu) + 1) % 154, cpu);
     if val == 144 {
         Interrupt::VBlank.request(cpu);
+    }
+    if stat_is_set(STAT::Mode1VBlankCheck, cpu) && val == 144 {
+        Interrupt::LCD.request(cpu);
+    }
+    if stat_is_set(STAT::LYLYCCheck, cpu) && val == read_address(0xFF45, cpu) {
+        Interrupt::LCD.request(cpu);
+    }
+
+    // set lcy=ly comparison flag
+    if val == read_address(0xFF45, cpu) {
+        let stat = read_address(0xFF41, cpu);
+        write_address(0xFF41, stat | 0b100, cpu);
+    } else {
+        let stat = read_address(0xFF41, cpu);
+        write_address(0xFF41, stat & (0xFF - 0b100), cpu);
     }
 }
 
@@ -51,7 +93,7 @@ pub enum STAT {
     SM(ScreenMode),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum ScreenMode {
     HBlank,
     VBlank,
@@ -91,13 +133,23 @@ pub fn read_stat_address(cpu: &mut Cpu) -> u8 {
     if LCDC::Power.is_set(cpu) {
         val
     } else {
-        val & (0xFF - 0b111)
+        (val & (0xFF - 0b11)) | 1
     }
 }
 
+pub fn write_lcdc_address(val: u8, cpu: &mut Cpu) {
+    // Turning off lcd
+    if (val & 0x80) == 0 {
+        // reset LY
+        write_address(0xFF44, 0, cpu);
+    }
+    write_address(0xFF40, val, cpu);
+}
+
 pub fn write_stat_address(val: u8, cpu: &mut Cpu) {
-    let read_only_val = read_address(0xFF41, cpu) & 0b111;
-    write_address(0xFF41, (val & (0xFF - 0b111)) | read_only_val, cpu)
+    let prev_val = read_address(0xFF41, cpu);
+    let write_val = (val & (0xFF - 0b111)) | (prev_val & 0b111);
+    write_address(0xFF41, write_val, cpu)
 }
 
 pub fn stat_is_set(stat: STAT, cpu: &mut Cpu) -> bool {
