@@ -344,6 +344,25 @@ pub fn read_joypad(cpu: &mut Cpu) -> u8 {
     }
 }
 
+pub fn read_channel_1_addresses(cpu: &mut Cpu) -> (u8, u8, u8, u8, u8) {
+    (read_address(0xFF10, cpu),
+     read_address(0xFF11, cpu),
+     read_address(0xFF12, cpu),
+     read_address(0xFF13, cpu),
+     read_address(0xFF14, cpu))
+}
+
+pub fn read_channel_2_addresses(cpu: &mut Cpu) -> (u8, u8, u8, u8) {
+    (read_address(0xFF16, cpu),
+     read_address(0xFF17, cpu),
+     read_address(0xFF18, cpu),
+     read_address(0xFF19, cpu))
+}
+
+pub fn read_address_i8(address: usize, cpu: &mut Cpu) -> i8 {
+    read_address(address, cpu) as i8
+}
+
 pub fn read_address(address: usize, cpu: &mut Cpu) -> u8 {
     match address {
         0...0x00FF => read_overlap_address(address, cpu),
@@ -366,11 +385,7 @@ pub fn read_overlap_address(address: usize, cpu: &mut Cpu) -> u8 {
 }
 
 fn get_selected_rom_bank(cpu: &mut Cpu) -> usize {
-    let hi_bank = if !cpu.ram_banking_mode {
-        cpu.ram_or_rom_bank << 5
-    } else {
-        0
-    };
+    let hi_bank = cond!(!cpu.ram_banking_mode, cpu.ram_or_rom_bank << 5, 0);
     let part_bank = hi_bank | cpu.lo_rom_bank;
     match part_bank {
         0x00 => 0x01,
@@ -387,11 +402,7 @@ pub fn read_cart_address(address: usize, cpu: &mut Cpu) -> u8 {
 
 pub fn read_ram_address(address: usize, cpu: &mut Cpu) -> u8 {
     if cpu.ram_enabled {
-        let ram_bank = if cpu.ram_banking_mode {
-            cpu.ram_or_rom_bank
-        } else {
-            0
-        };
+        let ram_bank = cond!(cpu.ram_banking_mode, cpu.ram_or_rom_bank, 0);
         cpu.ram_memory[address - 0xA000 + 0x2000 * ram_bank]
     } else {
         0

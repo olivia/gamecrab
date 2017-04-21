@@ -22,7 +22,7 @@ fn disassemble_rom(start: usize, limit: usize) {
     let mut cpu: cpu::Cpu = Default::default();
     cpu.load_bootrom("DMG_ROM.bin");
     cpu.has_booted = true;
-    cpu.load_cart("sml.gb");
+    cpu.load_cart("tetris.gb");
     let mut next_addr = start;
     for _ in 0..limit {
         let (op_length, instr, _) = opcode::lookup_op(next_addr, &mut cpu);
@@ -38,7 +38,7 @@ fn run_rom() {
 
     let mut next_addr = 0;
     let scale = 4;
-    // let audio = apu::play_audio();
+    let audio_device = apu::init_audio();
     let (width, height, canvas) = get_gameboy_canvas(scale);
     let mut window: PistonWindow = WindowSettings::new("🎮🦀", [width, height])
         .exit_on_esc(true)
@@ -47,7 +47,7 @@ fn run_rom() {
         .unwrap();
     window.set_ups(512);
     cpu.load_bootrom("DMG_ROM.bin");
-    cpu.load_cart("smls.gb");
+    cpu.load_cart("s.gb");
     let factory = window.factory.clone();
     let font = "FiraSans-Regular.ttf";
     let mut glyphs = Glyphs::new(font, factory).unwrap();
@@ -62,6 +62,7 @@ fn run_rom() {
     let cpu_hz = 4194304;
     let hz_512_div = 8192;
     let mut screen_buffer = [0; 256 * 256];
+    let mut apu_mod_cycles = 0;
     while let Some(e) = window.next() {
         if let Some(Button::Keyboard(key)) = e.press_args() {
             if !cpu.cart_loaded {
@@ -80,6 +81,7 @@ fn run_rom() {
                 Key::D3 => {
                     cpu.sprite_mode = (cpu.sprite_mode + 1) % 3;
                 }
+                Key::D4 => {}
                 _ => {}
             };
             let (handle_key, bit_mask) = joypad::joypad_bit(key);
@@ -97,7 +99,7 @@ fn run_rom() {
 
         if let Some(_) = e.update_args() {
             // Do sound stuff
-
+            // apu::play_audio(&audio_device, &mut cpu);
         };
 
         if let Some(_) = e.render_args() {
@@ -112,6 +114,7 @@ fn run_rom() {
                     } else {
                         mod_cycles += 4;
                         frame_mod_cycles += 4;
+                        apu_mod_cycles += 4;
                         // Finished ~456 clocks
                         if mod_cycles > line_scan_cycles {
                             let ly = cpu::read_address(0xFF44, &mut cpu);
@@ -119,6 +122,11 @@ fn run_rom() {
                             lcd::increment_ly(&mut cpu);
                             mod_cycles %= line_scan_cycles;
                         }
+                        if apu_mod_cycles > hz_512_div {
+                            apu::play_audio(&audio_device, &mut cpu);
+                            apu_mod_cycles %= hz_512_div;
+                        }
+
                         lcd::update_status(frame_mod_cycles, &mut cpu);
                     }
                     if cpu.dma_transfer_cycles_left > 0 {
@@ -163,12 +171,17 @@ fn run_rom() {
                     } else {
                         mod_cycles += cycles + cycle_offset;
                         frame_mod_cycles += cycles + cycle_offset;
+                        apu_mod_cycles += cycles + cycle_offset;
                         // Finished ~456 clocks
                         if mod_cycles > line_scan_cycles {
                             let ly = cpu::read_address(0xFF44, &mut cpu);
                             ppu::render_scanline(ly, &mut screen_buffer, &mut frame, &mut cpu);
                             lcd::increment_ly(&mut cpu);
                             mod_cycles %= line_scan_cycles;
+                        }
+                        if apu_mod_cycles > hz_512_div {
+                            apu::play_audio(&audio_device, &mut cpu);
+                            apu_mod_cycles %= hz_512_div;
                         }
                         lcd::update_status(frame_mod_cycles, &mut cpu);
                     }

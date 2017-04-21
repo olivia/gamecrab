@@ -28,16 +28,8 @@ fn clear_buffer(screen_buffer: &mut [u8; 256 * 256]) {
 
 pub fn write_background_line(ly: u8, buffer: &mut [u8; 256 * 256], cpu: &mut Cpu) {
     if (cpu.background_mode == 0 && LCDC::BGEnable.is_set(cpu)) || cpu.background_mode == 1 {
-        let start = if LCDC::BGTileMap.is_set(cpu) {
-            0x9C00
-        } else {
-            0x9800
-        };
-        let tile_map_start = if LCDC::Tileset.is_set(cpu) {
-            0x8000
-        } else {
-            0x8800
-        };
+        let start = cond!(LCDC::BGTileMap.is_set(cpu), 0x9C00, 0x9800);
+        let tile_map_start = cond!(LCDC::Tileset.is_set(cpu), 0x8000, 0x8800);
         let scroll_x = read_address(0xFF43, cpu) as usize;
         let scroll_y = read_address(0xFF42, cpu) as usize;
         let start_offset = 32 * (((ly as usize + scroll_y) / 8) % 32);
@@ -47,11 +39,10 @@ pub fn write_background_line(ly: u8, buffer: &mut [u8; 256 * 256], cpu: &mut Cpu
             let tile_x = (256 + 8 * (offset % 32) - scroll_x) % 256;
             // Skip painting the tiles that are not visible
             if tile_x <= 160 || tile_x >= 248 {
-                let tile_num = if LCDC::Tileset.is_set(cpu) {
-                    read_address(start + offset, cpu) as usize
-                } else {
-                    (128 as i16 + (read_address(start + offset, cpu) as i8) as i16) as usize
-                };
+                let tile_num = cond!(LCDC::Tileset.is_set(cpu),
+                    read_address(start + offset, cpu) as usize,                    
+                    (128 as i16 + read_address_i8(start + offset, cpu) as i16) as usize);
+
                 write_bg_tile_line(ly,
                                    tile_num,
                                    tile_x as usize,
@@ -68,27 +59,17 @@ pub fn write_background_line(ly: u8, buffer: &mut [u8; 256 * 256], cpu: &mut Cpu
 
 pub fn write_window_line(ly: u8, buffer: &mut [u8; 256 * 256], cpu: &mut Cpu) {
     if (cpu.window_mode == 0 && LCDC::WindowEnable.is_set(cpu)) || cpu.window_mode == 1 {
-        let start = if LCDC::WindowTileMap.is_set(cpu) {
-            0x9C00
-        } else {
-            0x9800
-        };
-        let tile_map_start = if LCDC::Tileset.is_set(cpu) {
-            0x8000
-        } else {
-            0x8800
-        };
+        let start = cond!(LCDC::WindowTileMap.is_set(cpu), 0x9C00, 0x9800);
+        let tile_map_start = cond!(LCDC::Tileset.is_set(cpu), 0x8000, 0x8800);
 
         let scroll_x = read_address(0xFF4B, cpu);
         let scroll_y = read_address(0xFF4A, cpu);
         if ly >= scroll_y {
             let start_offset = (32 * ((ly - scroll_y) / 8)) as usize;
             for offset in start_offset..(32 + start_offset) {
-                let tile_num = if LCDC::Tileset.is_set(cpu) {
-                    read_address(start + offset, cpu) as usize
-                } else {
-                    (128 as i16 + (read_address(start + offset, cpu) as i8) as i16) as usize
-                };
+                let tile_num = cond!(LCDC::Tileset.is_set(cpu),
+                    read_address(start + offset, cpu) as usize,                    
+                    (128 as i16 + read_address_i8(start + offset, cpu) as i16) as usize);
                 write_window_tile_line(ly,
                                        tile_num,
                                        8 * (offset as isize % 32) + scroll_x as isize - 7,
@@ -116,11 +97,7 @@ pub fn write_sprites_line(ly: u8, buffer: &mut [u8; 256 * 256], cpu: &mut Cpu) {
             let (x, tile_num, sprite_flag) = (read_address(address + 1, cpu) as isize,
                                               read_address(address + 2, cpu) as usize,
                                               read_address(address + 3, cpu));
-            let pallette_address = if (sprite_flag & 0b00010000) == 0 {
-                0xFF48
-            } else {
-                0xFF49
-            };
+            let pallette_address = cond!(sprite_flag & 0x10 == 0, 0xFF48, 0xFF49);
             let h_flip = (sprite_flag & 0b00100000) != 0;
             let v_flip = (sprite_flag & 0b01000000) != 0;
 
@@ -215,12 +192,12 @@ pub fn write_sprite_tile_line(ly: u8,
 
     let address_start = tile_map_start + 16 * tile_num;
     let row = (ly as isize - y) as usize;
-    let normalized_row = if v_flip { 7 - row } else { row };
+    let normalized_row = cond!(v_flip, 7 - row, row);
     let left_line = read_address(address_start + normalized_row * 2, cpu) as u16;
     let right_line = read_address(address_start + normalized_row * 2 + 1, cpu) as u16;
 
     for col in start_col..end_col {
-        let shift = if h_flip { col } else { 7 - col };
+        let shift = cond!(h_flip, col, 7 - col);
         let o_palette_idx = ((right_line >> shift & 1) << 1) as u8 + (left_line >> shift & 1) as u8;
         let color_idx = lookup_color_idx(pallette_address, o_palette_idx, cpu);
         if o_palette_idx != 0 {
