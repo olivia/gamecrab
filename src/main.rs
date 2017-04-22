@@ -44,6 +44,7 @@ fn run_rom() {
         .opengl(opengl)
         .build()
         .unwrap();
+
     cpu.load_bootrom("DMG_ROM.bin");
     cpu.load_cart("s.gb");
     let factory = window.factory.clone();
@@ -57,7 +58,7 @@ fn run_rom() {
     let mut frame_mod_cycles = 0;
     let line_scan_cycles = 456;
     let frame_cycles = 70224;
-    let cpu_hz = 4194304;
+    let _cpu_hz = 4194304;
     let hz_512_div = 8192;
     let mut screen_buffer = [0; 256 * 256];
     let mut apu_mod_cycles = 0;
@@ -93,11 +94,6 @@ fn run_rom() {
             if handle_key {
                 cpu.keys |= bit_mask;
             }
-        };
-
-        if let Some(_) = e.update_args() {
-            // Do sound stuff
-            // apu::play_audio(&audio_device, &mut cpu);
         };
 
         if let Some(_) = e.render_args() {

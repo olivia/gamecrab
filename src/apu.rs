@@ -1,5 +1,5 @@
 extern crate sdl2;
-use self::sdl2::audio::{AudioCallback, AudioSpecDesired};
+use self::sdl2::audio::AudioSpecDesired;
 use cpu::*;
 
 pub struct AudioChannel {
@@ -44,6 +44,7 @@ impl Default for Apu {
             length_clock: 0,
             sweep_clock: 0,
             envelope_clock: 0,
+            // sample_length_arr: [87; 512],
             sample_length_arr: sample_len_arr(),
             audio_queue: init_audio(44100),
             channel_1_time_freq: 0,
@@ -69,6 +70,9 @@ pub fn play_audio(sample_len: u8, cpu: &mut Cpu) {
         mix_channel_2(&mut result, cpu);
     }
     // mix_test(&mut result, cpu);
+    if cpu.apu.audio_queue.size() == 0 {
+        println!("Queue Empty");
+    }
     cpu.apu.audio_queue.queue(&result);
 }
 
@@ -76,7 +80,6 @@ pub fn step_length(cpu: &mut Cpu) {
     let channel_1_length_enable = read_address(0xFF14, cpu) & 0x40 != 0;
     let channel_2_length_enable = read_address(0xFF19, cpu) & 0x40 != 0;
     if cpu.apu.channel_1.enabled && channel_1_length_enable && cpu.apu.channel_1.counter != 0 {
-        println!("Decrementing");
         cpu.apu.channel_1.counter -= 1;
         if cpu.apu.channel_1.counter == 0 {
             cpu.apu.channel_1.enabled = false;
@@ -92,10 +95,9 @@ pub fn step_length(cpu: &mut Cpu) {
 }
 #[allow(non_snake_case)]
 pub fn mix_channel_1(result: &mut Vec<i16>, cpu: &mut Cpu) {
-    let (NR10, NR11, NR12, NR13, NR14) = read_channel_1_addresses(cpu);
+    let (_NR10, NR11, NR12, NR13, NR14) = read_channel_1_addresses(cpu);
     let time_freq = (NR14 as u16 & 0b111) << 8 | NR13 as u16;
     let duty = NR11 >> 6;
-    let length_load = NR11 & 0x3F;
     let not_time_freq = 2048 - time_freq as u32;
     let period = (44100 * not_time_freq / 131072) as u16;
     let volume_step = (1 << 9) as i16;
@@ -103,9 +105,11 @@ pub fn mix_channel_1(result: &mut Vec<i16>, cpu: &mut Cpu) {
     let sample_count = result.len();
     let volume = volume_step * init_volume;
     let high_len = get_duty(duty, period);
+    // println!("");
     for x in 0..sample_count {
         let wave_pos = (x as u16 + cpu.apu.channel_1_pos as u16) % period;
         result[x] += cond!(wave_pos <= high_len, volume, -volume);
+        //   print!("{:?}", cond!(wave_pos <= high_len, 0, 1));
     }
     cpu.apu.channel_1_pos = cpu.apu.channel_1_pos + sample_count as u32;
 }
@@ -131,7 +135,6 @@ pub fn mix_channel_2(result: &mut Vec<i16>, cpu: &mut Cpu) {
     let (NR21, NR22, NR23, NR24) = read_channel_2_addresses(cpu);
     let time_freq = (NR24 as u16 & 0b111) << 8 | NR23 as u16;
     let duty = NR21 >> 6;
-    let length_load = NR21 & 0x3F;
     let not_time_freq = 2048 - time_freq as u32;
     let period = (44100 * not_time_freq / 131072) as u16;
     let volume_step = (1 << 9) as i16;
@@ -162,6 +165,7 @@ pub fn handle_triggers(cpu: &mut Cpu) {
         cpu.apu.channel_2.enabled = nr22 & 0xF8 != 0;
     }
     if cpu.apu.channel_1_handle_trigger {
+        // println!("Channel1 Reloaded");
         cpu.apu.channel_1.enabled = true;
         cpu.apu.channel_1.counter = 64;
         cpu.apu.channel_1.envelope_pos = 0;
@@ -170,7 +174,6 @@ pub fn handle_triggers(cpu: &mut Cpu) {
         cpu.apu.channel_1.volume = (nr12 & 0xF0) >> 4;
         cpu.apu.channel_1_handle_trigger = false;
         cpu.apu.channel_1.enabled = nr12 & 0xF8 != 0;
-        println!("Handled {:?}", read_address(0xFF14, cpu));
     }
 }
 pub fn step(cpu: &mut Cpu) {
@@ -187,45 +190,6 @@ pub fn step(cpu: &mut Cpu) {
         cpu.apu.envelope_clock = (cpu.apu.envelope_clock + 1) % 512;
     }
     play_audio(sample_len, cpu);
-}
-
-pub struct SquareWave {
-    phase_inc: f32,
-    phase: f32,
-    volume: f32,
-}
-
-pub struct TriangleWave {
-    phase_inc: f32,
-    phase: f32,
-    volume: f32,
-}
-
-impl AudioCallback for SquareWave {
-    type Channel = f32;
-
-    fn callback(&mut self, out: &mut [f32]) {
-        // Generate a square wave
-        for x in out.iter_mut() {
-            *x = match self.phase {
-                0.0...0.5 => self.volume,
-                _ => -self.volume,
-            };
-            self.phase = (self.phase + self.phase_inc) % 1.0;
-        }
-    }
-}
-
-impl AudioCallback for TriangleWave {
-    type Channel = f32;
-
-    fn callback(&mut self, out: &mut [f32]) {
-        // Generate a triangle wave
-        for x in out.iter_mut() {
-            *x = -self.volume + (self.phase + self.phase) * self.volume * 2.0;
-            self.phase = (self.phase + self.phase_inc) % 1.0;
-        }
-    }
 }
 
 fn get_duty(duty: u8, freq: u16) -> u16 {
@@ -246,7 +210,8 @@ pub fn init_audio(freq: i32) -> sdl2::audio::AudioQueue<i16> {
         freq: Some(freq),
         channels: Some(1),
         // mono  -
-        samples: None, // default sample size
+        samples: None, /* default sample size
+                        *        samples: Some(32768), // default sample size */
     };
 
     let device = audio_subsystem.open_queue::<i16>(None, &desired_spec).unwrap();
