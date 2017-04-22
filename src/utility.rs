@@ -1,5 +1,4 @@
 macro_rules! cond {
-    // `()` indicates that the macro takes no argument.
     ($a:expr, $b:expr, $c:expr) => (
     if $a { $b } else { $c }
     )

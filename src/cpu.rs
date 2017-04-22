@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use interrupt::*;
 use lcd::*;
+use apu::*;
 use std::path::Path;
 use self::nfd::Response;
 
@@ -39,6 +40,7 @@ pub struct Cpu {
     pub window_mode: u8,
     pub sprite_mode: u8,
     pub halted: bool,
+    pub apu: Apu,
 }
 
 impl Cpu {
@@ -169,8 +171,21 @@ impl Default for Cpu {
             background_mode: 0,
             sprite_mode: 0,
             window_mode: 0,
+            apu: Default::default(),
         }
     }
+}
+
+pub fn write_nx4_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
+    // Check if should trigger
+    if (val & 0x80) != 0 {
+        match address {
+            0xFF14 => cpu.apu.channel_1_handle_trigger = true,
+            0xFF19 => cpu.apu.channel_2_handle_trigger = true,
+            _ => {}
+        };
+    }
+    write_address(address, val, cpu);
 }
 
 pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
@@ -206,12 +221,12 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
             0xFF10 => write_address(address, val, cpu), //NR 10 Sound Mode 1 Sweep Register
             0xFF11 => write_address(address, val, cpu), //NR 11 Sound Mode 1 Duty/Sound length
             0xFF12 => write_address(address, val, cpu), //NR 12 Sound Mode 1 Envelope
-            0xFF13 => write_address(address, val, cpu), //NR 12 Sound Mode 1 Frequency lo
-            0xFF14 => write_address(address, val, cpu), //NR 12 Sound Mode 1 Frequency hi
+            0xFF13 => write_address(address, val, cpu), //NR 13 Sound Mode 1 Frequency lo
+            0xFF14 => write_nx4_address(address, val, cpu), //NR 14 Sound Mode 1 Frequency hi
             0xFF16 => write_address(address, val, cpu), //NR 21 Sound Mode 2 Duty/Sound length
             0xFF17 => write_address(address, val, cpu), //NR 22 Sound Mode 2 Envelope
             0xFF18 => write_address(address, val, cpu), //NR 23 Sound Mode 2 Frequency lo
-            0xFF19 => write_address(address, val, cpu), //NR 24 Sound Mode 2 Frequency hi
+            0xFF19 => write_nx4_address(address, val, cpu), //NR 24 Sound Mode 2 Frequency hi
             0xFF1A => write_address(address, val, cpu), //NR 30 Sound Mode 3 On/Off
             0xFF1B => write_address(address, val, cpu), //NR 31 Sound Mode 3 Sound length
             0xFF1C => write_address(address, val, cpu), //NR 32 Sound Mode 3 Select Output Level

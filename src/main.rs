@@ -38,14 +38,12 @@ fn run_rom() {
 
     let mut next_addr = 0;
     let scale = 4;
-    let audio_device = apu::init_audio();
     let (width, height, canvas) = get_gameboy_canvas(scale);
     let mut window: PistonWindow = WindowSettings::new("🎮🦀", [width, height])
         .exit_on_esc(true)
         .opengl(opengl)
         .build()
         .unwrap();
-    window.set_ups(512);
     cpu.load_bootrom("DMG_ROM.bin");
     cpu.load_cart("s.gb");
     let factory = window.factory.clone();
@@ -123,7 +121,7 @@ fn run_rom() {
                             mod_cycles %= line_scan_cycles;
                         }
                         if apu_mod_cycles > hz_512_div {
-                            apu::play_audio(&audio_device, &mut cpu);
+                            apu::step(&mut cpu);
                             apu_mod_cycles %= hz_512_div;
                         }
 
@@ -136,10 +134,12 @@ fn run_rom() {
                     let interrupt_addr = interrupt::exec_halt_interrupts(next_addr, &mut cpu);
                     if !cpu.halted && (interrupt_addr == next_addr + 1) {
                         mod_cycles += 4;
+                        apu_mod_cycles += 4;
                         cpu.inc_clocks(4);
                         frame_mod_cycles += 4;
                     } else if !cpu.halted {
                         mod_cycles += 24;
+                        apu_mod_cycles += 24;
                         cpu.inc_clocks(24);
                         frame_mod_cycles += 24;
                     }
@@ -180,7 +180,7 @@ fn run_rom() {
                             mod_cycles %= line_scan_cycles;
                         }
                         if apu_mod_cycles > hz_512_div {
-                            apu::play_audio(&audio_device, &mut cpu);
+                            apu::step(&mut cpu);
                             apu_mod_cycles %= hz_512_div;
                         }
                         lcd::update_status(frame_mod_cycles, &mut cpu);
@@ -194,6 +194,7 @@ fn run_rom() {
                         mod_cycles += 20;
                         cpu.inc_clocks(20);
                         frame_mod_cycles += 20;
+                        apu_mod_cycles += 20;
                         next_addr = interrupt_addr;
                     }
                     lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
