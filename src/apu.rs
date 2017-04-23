@@ -47,7 +47,6 @@ impl Default for Apu {
             length_clock: 0,
             sweep_clock: 0,
             envelope_clock: 0,
-            // sample_length_arr: [87; 512],
             sample_length_arr: sample_len_arr(),
             audio_queue: init_audio(44100),
             channel_1_time_freq: 0,
@@ -116,10 +115,12 @@ pub fn mix_channel_1(result: &mut Vec<i16>, cpu: &mut Cpu) {
     let volume = volume_step * init_volume;
     let high_len = get_duty(duty, period) as u32;
     // println!("");
-    for x in 0..sample_count {
-        let wave_pos = (x as u32 + cpu.apu.channel_1_pos) % period as u32;
-        result[x] += cond!(wave_pos <= high_len, volume, -volume);
-        //   print!("{:?}", cond!(wave_pos <= high_len, 0, 1));
+    if period as u32 != 0 {
+        for x in 0..sample_count {
+            let wave_pos = (x as u32 + cpu.apu.channel_1_pos) % period as u32;
+            result[x] += cond!(wave_pos <= high_len, volume, -volume);
+            //   print!("{:?}", cond!(wave_pos <= high_len, 0, 1));
+        }
     }
     cpu.apu.channel_1_pos = cpu.apu.channel_1_pos + sample_count as u32;
 }
@@ -152,15 +153,14 @@ pub fn mix_channel_2(result: &mut Vec<i16>, cpu: &mut Cpu) {
     let sample_count = result.len();
     let volume = volume_step * init_volume;
     let high_len = get_duty(duty, period) as u16;
-    for x in 0..sample_count {
-        let wave_pos = (x as u16 + cpu.apu.channel_2_pos as u16) % (period as u16);
-        result[x] += cond!(wave_pos <= high_len, volume, -volume);
+    if period as u32 != 0 {
+        for x in 0..sample_count {
+            let wave_pos = (x as u16 + cpu.apu.channel_2_pos as u16) % (period as u16);
+            result[x] += cond!(wave_pos <= high_len, volume, -volume);
+        }
     }
-    if (cpu.apu.channel_2_pos + sample_count as u32) % period as u32 == 0 {
-        cpu.apu.channel_2_pos = 0;
-    } else {
-        cpu.apu.channel_2_pos = cpu.apu.channel_2_pos + sample_count as u32;
-    }
+    cpu.apu.channel_2_pos = cpu.apu.channel_2_pos + sample_count as u32;
+
 }
 
 pub fn handle_triggers(cpu: &mut Cpu) {
