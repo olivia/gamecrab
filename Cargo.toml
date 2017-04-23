@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["olivia"]
 
 [dependencies]
-piston_window = "0.61.0"
+piston_window = "0.62.0"
 fps_counter = "0.2.0"
 image = "0.12.1"
 time = "0.1"

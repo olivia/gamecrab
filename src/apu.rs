@@ -38,6 +38,7 @@ impl Default for AudioChannel {
         }
     }
 }
+
 impl Default for Apu {
     fn default() -> Apu {
         let audio_freq = 44100;
@@ -63,9 +64,7 @@ impl Default for Apu {
     }
 }
 
-
-impl Apu {}
-pub fn play_audio(sample_len: u8, cpu: &mut Cpu) {
+pub fn gen_samples(sample_len: u8, cpu: &mut Cpu) {
     let mut result = vec![0; sample_len as usize];
     if cpu.apu.channel_1.enabled {
         mix_channel_1(&mut result, cpu);
@@ -77,19 +76,14 @@ pub fn play_audio(sample_len: u8, cpu: &mut Cpu) {
 }
 
 pub fn queue(cpu: &mut Cpu) {
-    /*
-    println!("Queue size before: {:?}", cpu.apu.audio_queue.size());
-    println!("Vec queue size: {:?}", cpu.apu.audio_vec_queue.len());
-    */
-    println!("Queue consume {:?}",
-             cpu.apu.prev_size as i32 - cpu.apu.audio_queue.size() as i32);
     if cpu.apu.audio_queue.size() == 0 {
-        println!("Empty {:?}", cpu.apu.audio_vec_queue.len());
+        println!("Empty queue");
     }
+
+    // This is the maximum the queue can be delayed by
     cpu.apu.audio_queue.queue(&cpu.apu.audio_vec_queue);
     cpu.apu.audio_vec_queue.clear();
     cpu.apu.prev_size = cpu.apu.audio_queue.size() as i32;
-    //println!("Queue size after: {:?}", cpu.apu.audio_queue.size());
 }
 
 pub fn step_length(cpu: &mut Cpu) {
@@ -114,8 +108,8 @@ pub fn mix_channel_1(result: &mut Vec<i16>, cpu: &mut Cpu) {
     let (_NR10, NR11, NR12, NR13, NR14) = read_channel_1_addresses(cpu);
     let time_freq = (NR14 as u16 & 0b111) << 8 | NR13 as u16;
     let duty = NR11 >> 6;
-    let not_time_freq = 2048 - time_freq as u32;
-    let period = (44100 * not_time_freq / 131072) as u16;
+    let not_time_freq = 2048.0 - time_freq as f32;
+    let period = 44100.0 * not_time_freq / 131072.0;
     let volume_step = (1 << 9) as i16;
     let init_volume = ((NR12 & 0xF0) >> 4) as i16;
     let sample_count = result.len();
@@ -133,15 +127,15 @@ pub fn mix_channel_1(result: &mut Vec<i16>, cpu: &mut Cpu) {
 #[allow(non_snake_case)]
 pub fn mix_test(result: &mut Vec<i16>, cpu: &mut Cpu) {
     let duty = 1;
-    let not_time_freq = 440;
-    let period = (44100 * not_time_freq / 131072) as u16;
+    let not_time_freq = 440.0;
+    let period = (44100.0 * not_time_freq / 131072.0) as f32;
     let volume_step = (1 << 9) as i16;
     let init_volume = 10 as i16;
     let sample_count = result.len();
     let volume = volume_step * init_volume;
-    let high_len = get_duty(duty, period);
+    let high_len = get_duty(duty, period) as u16;
     for x in 0..sample_count {
-        let wave_pos = (x as u16 + cpu.apu.channel_2_pos as u16) % period;
+        let wave_pos = (x as u16 + cpu.apu.channel_2_pos as u16) % (period as u16);
         result[x] += cond!(wave_pos <= high_len, volume, -volume);
     }
     cpu.apu.channel_2_pos = cpu.apu.channel_2_pos + sample_count as u32;
@@ -151,15 +145,15 @@ pub fn mix_channel_2(result: &mut Vec<i16>, cpu: &mut Cpu) {
     let (NR21, NR22, NR23, NR24) = read_channel_2_addresses(cpu);
     let time_freq = (NR24 as u16 & 0b111) << 8 | NR23 as u16;
     let duty = NR21 >> 6;
-    let not_time_freq = 2048 - time_freq as u32;
-    let period = (44100 * not_time_freq / 131072) as u16;
+    let not_time_freq = 2048.0 - time_freq as f32;
+    let period = 44100.0 * not_time_freq / 131072.0;
     let volume_step = (1 << 9) as i16;
     let init_volume = ((NR22 & 0xF0) >> 4) as i16;
     let sample_count = result.len();
     let volume = volume_step * init_volume;
-    let high_len = get_duty(duty, period);
+    let high_len = get_duty(duty, period) as u16;
     for x in 0..sample_count {
-        let wave_pos = (x as u16 + cpu.apu.channel_2_pos as u16) % period;
+        let wave_pos = (x as u16 + cpu.apu.channel_2_pos as u16) % (period as u16);
         result[x] += cond!(wave_pos <= high_len, volume, -volume);
     }
     if (cpu.apu.channel_2_pos + sample_count as u32) % period as u32 == 0 {
@@ -204,15 +198,15 @@ pub fn step(cpu: &mut Cpu) {
     if cpu.apu.master_clock % 8 == 7 {
         cpu.apu.envelope_clock = (cpu.apu.envelope_clock + 1) % 512;
     }
-    play_audio(sample_len, cpu);
+    gen_samples(sample_len, cpu);
 }
 
-fn get_duty(duty: u8, freq: u16) -> u16 {
+fn get_duty(duty: u8, freq: f32) -> f32 {
     match duty {
-        0 => freq / 8,
-        1 => freq / 4,
-        2 => freq / 2,
-        3 => (freq / 4) * 3,
+        0 => freq / 8.0,
+        1 => freq / 4.0,
+        2 => freq / 2.0,
+        3 => (freq / 4.0) * 3.0,
         _ => unreachable!(),
     }
 }
@@ -225,12 +219,11 @@ pub fn init_audio(freq: i32) -> sdl2::audio::AudioQueue<i16> {
         freq: Some(freq),
         channels: Some(1),
         // mono  -
-        samples: Some(4096), /* default sample size
-                              *        samples: Some(32768), // default sample size */
+        samples: None, /* default sample size
+                        *        samples: Some(32768), // default sample size */
     };
 
-    let device = audio_subsystem
-        .open_queue::<i16>(None, &desired_spec)
+    let device = audio_subsystem.open_queue::<i16>(None, &desired_spec)
         .unwrap();
     device.resume();
     device

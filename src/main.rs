@@ -46,7 +46,7 @@ fn run_rom() {
         .unwrap();
 
     cpu.load_bootrom("DMG_ROM.bin");
-    cpu.load_cart("s.gb");
+    cpu.load_cart("a.gb");
     let factory = window.factory.clone();
     let font = "FiraSans-Regular.ttf";
     let mut glyphs = Glyphs::new(font, factory).unwrap();
@@ -62,6 +62,7 @@ fn run_rom() {
     let hz_512_div = 8192;
     let mut screen_buffer = [0; 256 * 256];
     let mut apu_mod_cycles = 0;
+    let mut start_updating = false;
     window.set_max_fps(60);
     while let Some(e) = window.next() {
         if let Some(Button::Keyboard(key)) = e.press_args() {
@@ -72,12 +73,23 @@ fn run_rom() {
             keyboard::handle_key_release(key, &mut cpu);
         };
 
-        if let Some(_) = e.render_args() {
-            let mut lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
-            apu::queue(&mut cpu);
-            while cpu.cart_loaded && (!lcd_power_on || frame_mod_cycles < frame_cycles) {
-                if cpu.halted {
+        if let Some(_) = e.idle_args() {
+            if cpu.cart_loaded {
+                start_updating = true;
+            };
+        }
+        if !cpu.cart_loaded {
+            continue;
+        };
 
+        if let Some(_) = e.update_args() {
+            if !start_updating {
+                continue;
+            }
+            apu::queue(&mut cpu);
+            let mut lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
+            while apu_mod_cycles <= hz_512_div {
+                if cpu.halted {
                     if !lcd_power_on {
                         mod_cycles = 0;
                         frame_mod_cycles = 0;
@@ -93,11 +105,6 @@ fn run_rom() {
                             lcd::increment_ly(&mut cpu);
                             mod_cycles %= line_scan_cycles;
                         }
-                        if apu_mod_cycles > hz_512_div {
-                            apu::step(&mut cpu);
-                            apu_mod_cycles %= hz_512_div;
-                        }
-
                         lcd::update_status(frame_mod_cycles, &mut cpu);
                     }
                     if cpu.dma_transfer_cycles_left > 0 {
@@ -119,6 +126,7 @@ fn run_rom() {
                     next_addr = interrupt_addr;
                 } else {
                     let (op_length, instr, cycles) = opcode::lookup_op(next_addr, &mut cpu);
+
                     if false && cpu.has_booted {
                         println!("0x{:4>0X}:\t{:?}", next_addr, instr);
                     }
@@ -142,19 +150,15 @@ fn run_rom() {
                         frame_mod_cycles = 0;
                         lcd::ScreenMode::VBlank.set(&mut cpu);
                     } else {
+                        apu_mod_cycles += cycles + cycle_offset;
                         mod_cycles += cycles + cycle_offset;
                         frame_mod_cycles += cycles + cycle_offset;
-                        apu_mod_cycles += cycles + cycle_offset;
                         // Finished ~456 clocks
                         if mod_cycles > line_scan_cycles {
                             let ly = cpu::read_address(0xFF44, &mut cpu);
                             ppu::render_scanline(ly, &mut screen_buffer, &mut frame, &mut cpu);
                             lcd::increment_ly(&mut cpu);
                             mod_cycles %= line_scan_cycles;
-                        }
-                        if apu_mod_cycles > hz_512_div {
-                            apu::step(&mut cpu);
-                            apu_mod_cycles %= hz_512_div;
                         }
                         lcd::update_status(frame_mod_cycles, &mut cpu);
                     }
@@ -167,20 +171,38 @@ fn run_rom() {
                         mod_cycles += 20;
                         cpu.inc_clocks(20);
                         frame_mod_cycles += 20;
-                        apu_mod_cycles += 20;
+                        if lcd_power_on {
+                            apu_mod_cycles += 20;
+                        }
                         next_addr = interrupt_addr;
                     }
                     lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
                 }
             }
-            frame_mod_cycles %= frame_cycles;
-            texture.update(&mut window.encoder, &frame).unwrap();
+            if lcd_power_on {
+                apu::step(&mut cpu);
+            }
+            apu_mod_cycles %= hz_512_div;
+        }
+
+        if let Some(_) = e.render_args() {
+            if !start_updating {
+                continue;
+            }
+            if cpu.cart_loaded {
+                window.set_ups(512);
+            }
+            let lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
+            if lcd_power_on && frame_mod_cycles > frame_cycles {
+                frame_mod_cycles %= frame_cycles;
+                texture.update(&mut window.encoder, &frame).unwrap();
+            }
             window.draw_2d(&e, |c, g| {
                 let transform = c.transform.trans(10.0, 30.0);
 
                 clear([1.0; 4], g);
                 image(&texture, c.transform.scale(scale as f64, scale as f64), g);
-                text::Text::new_color([0.0, 1.0, 1.0, 1.0], 32).draw(&(counter.tick().to_string()),
+                text::Text::new_color([0.0, 1.0, 1.0, 1.0], 32).draw(&counter.tick().to_string(),
                                                                      &mut glyphs,
                                                                      &c.draw_state,
                                                                      transform,
