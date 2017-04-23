@@ -8,5 +8,6 @@ pub mod flag;
 pub mod lcd;
 pub mod ppu;
 pub mod interrupt;
+pub mod keyboard;
 pub mod joypad;
 pub mod apu;

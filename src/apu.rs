@@ -23,6 +23,8 @@ pub struct Apu {
     pub channel_1: AudioChannel,
     pub channel_2: AudioChannel,
     pub audio_queue: sdl2::audio::AudioQueue<i16>,
+    pub prev_size: i32,
+    pub audio_vec_queue: Vec<i16>,
     pub audio_freq: u32,
 }
 
@@ -55,6 +57,8 @@ impl Default for Apu {
             channel_1: Default::default(),
             channel_2: Default::default(),
             audio_freq: audio_freq,
+            audio_vec_queue: Vec::new(),
+            prev_size: 0,
         }
     }
 }
@@ -69,11 +73,23 @@ pub fn play_audio(sample_len: u8, cpu: &mut Cpu) {
     if cpu.apu.channel_2.enabled {
         mix_channel_2(&mut result, cpu);
     }
-    // mix_test(&mut result, cpu);
+    cpu.apu.audio_vec_queue.append(&mut result);
+}
+
+pub fn queue(cpu: &mut Cpu) {
+    /*
+    println!("Queue size before: {:?}", cpu.apu.audio_queue.size());
+    println!("Vec queue size: {:?}", cpu.apu.audio_vec_queue.len());
+    */
+    println!("Queue consume {:?}",
+             cpu.apu.prev_size as i32 - cpu.apu.audio_queue.size() as i32);
     if cpu.apu.audio_queue.size() == 0 {
-        println!("Queue Empty");
+        println!("Empty {:?}", cpu.apu.audio_vec_queue.len());
     }
-    cpu.apu.audio_queue.queue(&result);
+    cpu.apu.audio_queue.queue(&cpu.apu.audio_vec_queue);
+    cpu.apu.audio_vec_queue.clear();
+    cpu.apu.prev_size = cpu.apu.audio_queue.size() as i32;
+    //println!("Queue size after: {:?}", cpu.apu.audio_queue.size());
 }
 
 pub fn step_length(cpu: &mut Cpu) {
@@ -104,10 +120,10 @@ pub fn mix_channel_1(result: &mut Vec<i16>, cpu: &mut Cpu) {
     let init_volume = ((NR12 & 0xF0) >> 4) as i16;
     let sample_count = result.len();
     let volume = volume_step * init_volume;
-    let high_len = get_duty(duty, period);
+    let high_len = get_duty(duty, period) as u32;
     // println!("");
     for x in 0..sample_count {
-        let wave_pos = (x as u16 + cpu.apu.channel_1_pos as u16) % period;
+        let wave_pos = (x as u32 + cpu.apu.channel_1_pos) % period as u32;
         result[x] += cond!(wave_pos <= high_len, volume, -volume);
         //   print!("{:?}", cond!(wave_pos <= high_len, 0, 1));
     }
@@ -165,7 +181,6 @@ pub fn handle_triggers(cpu: &mut Cpu) {
         cpu.apu.channel_2.enabled = nr22 & 0xF8 != 0;
     }
     if cpu.apu.channel_1_handle_trigger {
-        // println!("Channel1 Reloaded");
         cpu.apu.channel_1.enabled = true;
         cpu.apu.channel_1.counter = 64;
         cpu.apu.channel_1.envelope_pos = 0;
@@ -210,11 +225,13 @@ pub fn init_audio(freq: i32) -> sdl2::audio::AudioQueue<i16> {
         freq: Some(freq),
         channels: Some(1),
         // mono  -
-        samples: None, /* default sample size
-                        *        samples: Some(32768), // default sample size */
+        samples: Some(4096), /* default sample size
+                              *        samples: Some(32768), // default sample size */
     };
 
-    let device = audio_subsystem.open_queue::<i16>(None, &desired_spec).unwrap();
+    let device = audio_subsystem
+        .open_queue::<i16>(None, &desired_spec)
+        .unwrap();
     device.resume();
     device
 }
