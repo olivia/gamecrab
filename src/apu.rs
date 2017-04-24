@@ -181,35 +181,41 @@ pub fn mix_channel_2(result: &mut Vec<i16>, cpu: &mut Cpu) {
 
 }
 
+
 #[allow(non_snake_case)]
 pub fn mix_channel_3(result: &mut Vec<i16>, cpu: &mut Cpu) {
     let (NR30, _, NR32, NR33, NR34) = read_channel_3_addresses(cpu);
     let time_freq = ((NR34 as u16 & 0b111) << 8) | NR33 as u16;
-    let not_time_freq = 2048.0 - time_freq as f32;
-    let period = 44100.0 * not_time_freq / 2097152.0;
+    let not_time_freq = 2 * (2048 - time_freq as u32);
     let volume_step = (1 << 9) as i16;
     let volume_shift = ((NR32 & 0x60) >> 4) as i16;
-    let sample_count = result.len();
     //    println!("period: {:?}", period);
-    if (NR30 & 0x80) != 0 && period as u32 != 0 {
-        for x in 0..sample_count {
-            if cpu.apu.channel_3_pos >= period as u32 {
-                cpu.apu.channel_3_wave_pos += cpu.apu.channel_3_pos / period as u32;
-                cpu.apu.channel_3_pos %= period as u32;
+    if (NR30 & 0x80) != 0 && not_time_freq as u32 != 0 {
+        let downsample = 1 + 8192 / result.len();
+        let mut freq = cpu.apu.channel_3_pos;
+        for x in 0..8192 {
+            // cycles
+            freq -= 1;
+            if freq <= 0 {
+                freq = not_time_freq;
+                cpu.apu.channel_3_wave_pos += 1;
+                cpu.apu.channel_3_wave_pos %= 32;
+                // reload
             }
-            cpu.apu.channel_3_pos += 1;
-            cpu.apu.channel_3_wave_pos %= 32;
             let sample_cell = read_address(0xFF30 + (cpu.apu.channel_3_wave_pos as usize) / 2, cpu);
             let sample = cond!(cpu.apu.channel_3_wave_pos % 2 == 0,
                                sample_cell >> 4,
                                sample_cell & 0x0F);
-            if volume_shift != 0 {
-                result[x] += (volume_step * (2 * sample as i16 - 15)) / (1 << (volume_shift - 1));
+            let sample_idx = x / downsample;
+            if volume_shift != 0 && x % downsample == 0 {
+                result[sample_idx] += (volume_step * (2 * sample as i16 - 15)) /
+                                      (1 << (volume_shift - 1));
             }
         }
+        cpu.apu.channel_3_pos = freq;
     }
-
 }
+
 
 pub fn handle_triggers(cpu: &mut Cpu) {
     if cpu.apu.channel_3_handle_trigger {
@@ -217,6 +223,10 @@ pub fn handle_triggers(cpu: &mut Cpu) {
         cpu.apu.channel_3.counter = 256;
         cpu.apu.channel_3_wave_pos = 0;
         let nr32 = read_address(0xFF1C, cpu);
+        cpu.apu.channel_3_pos =
+            2 *
+            (2048 - (read_address(0xFF1D, cpu) as u32 | (read_address(0xFF1E, cpu) as u32) << 8) &
+             0x7F);
         cpu.apu.channel_3.volume = (nr32 & 0x60) >> 5;
         cpu.apu.channel_3_handle_trigger = false;
         cpu.apu.channel_3.enabled = (read_address(0xFF1A, cpu) & 0x80) != 0;
