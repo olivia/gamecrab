@@ -189,19 +189,18 @@ pub fn mix_channel_3(result: &mut Vec<i16>, cpu: &mut Cpu) {
     let not_time_freq = 2 * (2048 - time_freq as u32);
     let volume_step = (1 << 9) as i16;
     let volume_shift = ((NR32 & 0x60) >> 4) as i16;
-    //    println!("period: {:?}", period);
     if (NR30 & 0x80) != 0 && not_time_freq as u32 != 0 {
         let downsample = 1 + 8192 / result.len();
         let mut freq = cpu.apu.channel_3_pos;
         for x in 0..8192 {
             // cycles
-            freq -= 1;
-            if freq <= 0 {
+            if freq == 0 {
                 freq = not_time_freq;
                 cpu.apu.channel_3_wave_pos += 1;
                 cpu.apu.channel_3_wave_pos %= 32;
                 // reload
             }
+            freq -= 1;
             let sample_cell = read_address(0xFF30 + (cpu.apu.channel_3_wave_pos as usize) / 2, cpu);
             let sample = cond!(cpu.apu.channel_3_wave_pos % 2 == 0,
                                sample_cell >> 4,
