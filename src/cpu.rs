@@ -182,6 +182,7 @@ pub fn write_nx4_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
         match address {
             0xFF14 => cpu.apu.channel_1_handle_trigger = true,
             0xFF19 => cpu.apu.channel_2_handle_trigger = true,
+            0xFF1E => cpu.apu.channel_3_handle_trigger = true,
             _ => {}
         };
     }
@@ -231,7 +232,7 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
             0xFF1B => write_address(address, val, cpu), //NR 31 Sound Mode 3 Sound length
             0xFF1C => write_address(address, val, cpu), //NR 32 Sound Mode 3 Select Output Level
             0xFF1D => write_address(address, val, cpu), //NR 33 Sound Mode 3 Frequency lo
-            0xFF1E => write_address(address, val, cpu), //NR 34 Sound Mode 3 Frequency hi
+            0xFF1E => write_nx4_address(address, val, cpu), //NR 34 Sound Mode 3 Frequency hi
             0xFF20 => write_address(address, val, cpu), //NR 41 Sound Mode 4 Sound length
             0xFF21 => write_address(address, val, cpu), //NR 42 Sound Mode 4 Envelope
             0xFF22 => write_address(address, val, cpu), //NR 43 Sound Mode 4 Polynomial Counter
@@ -372,6 +373,14 @@ pub fn read_channel_2_addresses(cpu: &mut Cpu) -> (u8, u8, u8, u8) {
      read_address(0xFF17, cpu),
      read_address(0xFF18, cpu),
      read_address(0xFF19, cpu))
+}
+
+pub fn read_channel_3_addresses(cpu: &mut Cpu) -> (u8, u8, u8, u8, u8) {
+    (read_address(0xFF1A, cpu),
+     read_address(0xFF1B, cpu),
+     read_address(0xFF1C, cpu),
+     read_address(0xFF1D, cpu),
+     read_address(0xFF1E, cpu))
 }
 
 pub fn read_address_i8(address: usize, cpu: &mut Cpu) -> i8 {
