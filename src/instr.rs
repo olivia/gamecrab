@@ -11,27 +11,24 @@ pub fn ld_m(reg: Register, val: u16, curr_addr: usize, cpu: &mut Cpu) -> usize {
 }
 
 pub fn ldhl_sp(val: i8, curr_addr: usize, cpu: &mut Cpu) -> usize {
-    let sp_val = cpu.sp as i32;
     let sp = cpu.sp;
     let new_val = wrapping_off_u16_i8(sp, val);
-    cpu.sp = new_val;
-    flag::mod_flags(
-        ((Flag::Z, false),
-         (Flag::N, false),
-         (Flag::H, 0x000F < ((sp_val & 0x000F) + ((val as i32) & 0x000F))),
-         (Flag::C, 0x00FF < ((sp_val & 0x00FF) + ((val as i32) & 0x00FF)))),
-        cpu);
+    write_multi_register(Register::HL, new_val, cpu);
+    flag::mod_flags(((Flag::Z, false),
+                     (Flag::N, false),
+                     (Flag::H, 0x000F < ((cpu.sp & 0x000F) + ((val as u8) as u16) & 0x000F)),
+                     (Flag::C, 0x00FF < ((cpu.sp & 0x00FF) + (((val as u8) as u16) & 0x00FF)))),
+                    cpu);
     curr_addr
 }
 
 pub fn add_to_sp(num: i8, curr_addr: usize, cpu: &mut Cpu) -> usize {
-    let sp_val = cpu.sp as i32;
     cpu.sp = wrapping_off_u16_i8(cpu.sp, num);
-    flag::mod_flags(
-        ((Flag::N, false),
-         (Flag::H, 0x000F < ((sp_val & 0x000F) + ((num as i32) & 0x000F))),
-         (Flag::C, 0x00FF < ((sp_val & 0x00FF) + ((num as i32) & 0x00FF)))),
-        cpu);
+    flag::mod_flags(((Flag::N, false),
+                     (Flag::H, 0x000F < ((cpu.sp & 0x000F) + ((num as u8) as u16) & 0x000F)),
+                     (Flag::C, 0x00FF < ((cpu.sp & 0x00FF) + (((num as u8) as u16) & 0x00FF))),
+                     (Flag::Z, false)),
+                    cpu);
     curr_addr
 }
 
@@ -39,45 +36,35 @@ pub fn add_to_sp(num: i8, curr_addr: usize, cpu: &mut Cpu) -> usize {
 pub fn add_to_hl(num: u16, curr_addr: usize, cpu: &mut Cpu) -> usize {
     let hl_val = read_multi_register(Register::HL, cpu);
     write_multi_register(Register::HL, hl_val.wrapping_add(num), cpu);
-    flag::mod_flags(
-        ((Flag::N, false),
-         (Flag::H, 0x0FFF < ((hl_val & 0x0FFF) + (num & 0x0FFF))),
-         (Flag::C, 0xFFFF < (hl_val as u32 + num as u32))),
-        cpu);
+    flag::mod_flags(((Flag::N, false),
+                     (Flag::H, 0x0FFF < ((hl_val & 0x0FFF) + (num & 0x0FFF))),
+                     (Flag::C, 0xFFFF < (hl_val as u32 + num as u32))),
+                    cpu);
     curr_addr
 }
 
 pub fn a_or_val(num: u8, curr_addr: usize, cpu: &mut Cpu) -> usize {
     cpu.a |= num;
-    flag::mod_flags(
-        ((Flag::Z, cpu.a == 0),
-         (Flag::N, false),
-         (Flag::H, false),
-         (Flag::C, false)),
-        cpu);
+    flag::mod_flags(((Flag::Z, cpu.a == 0), (Flag::N, false), (Flag::H, false), (Flag::C, false)),
+                    cpu);
     curr_addr
 }
 
 pub fn a_and_val(num: u8, curr_addr: usize, cpu: &mut Cpu) -> usize {
     cpu.a &= num;
-    flag::mod_flags(
-        ((Flag::Z, cpu.a == 0),
-         (Flag::N, false),
-         (Flag::H, true),
-         (Flag::C, false)),
-        cpu);
+    flag::mod_flags(((Flag::Z, cpu.a == 0), (Flag::N, false), (Flag::H, true), (Flag::C, false)),
+                    cpu);
     curr_addr
 }
 
 pub fn add_to_a(num: u8, curr_addr: usize, cpu: &mut Cpu) -> usize {
     let a_val = cpu.a;
     let res = a_val.wrapping_add(num);
-    flag::mod_flags(
-        ((Flag::N, false),
-         (Flag::Z, res == 0),
-         (Flag::H, 0x10 <= ((a_val & 0x0F) + (num & 0x0F))),
-         (Flag::C, 0x0100 <= (a_val as u16 + num as u16))),
-        cpu);
+    flag::mod_flags(((Flag::N, false),
+                     (Flag::Z, res == 0),
+                     (Flag::H, 0x10 <= ((a_val & 0x0F) + (num & 0x0F))),
+                     (Flag::C, 0x0100 <= (a_val as u16 + num as u16))),
+                    cpu);
     cpu.a = res;
     curr_addr
 }
@@ -86,26 +73,22 @@ pub fn addc_to_a(num: u8, curr_addr: usize, cpu: &mut Cpu) -> usize {
     let a_val = cpu.a;
     let carry = if flag::is_set(Flag::C, cpu) { 1 } else { 0 };
     let res = a_val.wrapping_add(num).wrapping_add(carry);
-    flag::mod_flags(
-        ((Flag::N, false),
-         (Flag::Z, res == 0),
-         (Flag::H,
-          0x10 <= ((a_val & 0x0F) + (num & 0x0F) + carry)),
-         (Flag::C,
-          0x0100 <= (a_val as u16 + num as u16 + carry as u16))),
-        cpu);
+    flag::mod_flags(((Flag::N, false),
+                     (Flag::Z, res == 0),
+                     (Flag::H, 0x10 <= ((a_val & 0x0F) + (num & 0x0F) + carry)),
+                     (Flag::C, 0x0100 <= (a_val as u16 + num as u16 + carry as u16))),
+                    cpu);
     cpu.a = res;
     curr_addr
 }
 
 pub fn sub_from_a(num: u8, curr_addr: usize, cpu: &mut Cpu) -> usize {
     let a_val = cpu.a;
-    flag::mod_flags(
-        ((Flag::N, true),
-         (Flag::Z, a_val == num),
-         (Flag::H, (a_val & 0x0F) < (num & 0x0F)),
-         (Flag::C, a_val < num)),
-        cpu);
+    flag::mod_flags(((Flag::N, true),
+                     (Flag::Z, a_val == num),
+                     (Flag::H, (a_val & 0x0F) < (num & 0x0F)),
+                     (Flag::C, a_val < num)),
+                    cpu);
     cpu.a = a_val.wrapping_sub(num);
     curr_addr
 }
@@ -114,12 +97,11 @@ pub fn subc_from_a(num: u8, curr_addr: usize, cpu: &mut Cpu) -> usize {
     let a_val = cpu.a;
     let carry = if flag::is_set(Flag::C, cpu) { 1 } else { 0 };
     let res = a_val.wrapping_sub(num).wrapping_sub(carry);
-    flag::mod_flags(
-        ((Flag::N, true),
-         (Flag::Z, res == 0),
-         (Flag::H, (a_val & 0x0F) < ((num & 0x0F) + carry)),
-         (Flag::C, (a_val as u16) < (num as u16 + carry as u16))),
-        cpu);
+    flag::mod_flags(((Flag::N, true),
+                     (Flag::Z, res == 0),
+                     (Flag::H, (a_val & 0x0F) < ((num & 0x0F) + carry)),
+                     (Flag::C, (a_val as u16) < (num as u16 + carry as u16))),
+                    cpu);
     cpu.a = res;
     curr_addr
 }
