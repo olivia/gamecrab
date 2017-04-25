@@ -181,22 +181,42 @@ pub fn write_nx4_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
     if (val & 0x80) != 0 {
         match address {
             0xFF14 => {
+                let nr10 = read_address(0xFF10, cpu);
                 let nr12 = read_address(0xFF12, cpu);
+                let nr13 = read_address(0xFF13, cpu);
+                let nr14 = read_address(0xFF14, cpu);
+                let time_freq = (nr14 as u16 & 0b111) << 8 | nr13 as u16;
+                let not_time_freq = 4 * (2048 - time_freq as u32);
                 cpu.apu.channel_1.enabled = true;
                 cpu.apu.channel_1.counter = 64;
                 cpu.apu.channel_1.envelope_pos = nr12 & 7;
-                cpu.apu.channel_1_pos = 0;
+                cpu.apu.channel_1.freq_pos = not_time_freq;
+                cpu.apu.channel_1_shadow_freq = not_time_freq;
+                cpu.apu.sweep_period = (nr10 >> 4) & 7;
+                cpu.apu.sweep_clock = cpu.apu.sweep_period;
+                let shift = nr10 & 7;
+                cpu.apu.sweeping = cpu.apu.sweep_clock != 0 || shift != 0;
+                cpu.apu.sweep_negate = (nr10 & 8) != 0;
                 cpu.apu.channel_1.volume = (nr12 & 0xF0) >> 4;
                 cpu.apu.channel_1.enabled = nr12 & 0xF8 != 0;
+                if cpu.apu.sweeping && cpu.apu.freq_sweep(shift, cpu.apu.sweep_negate) > 2047 {
+                    cpu.apu.channel_1.enabled = false;
+                }
+
             }
             0xFF19 => {
                 let nr22 = read_address(0xFF17, cpu);
+                let nr23 = read_address(0xFF18, cpu);
+                let nr24 = read_address(0xFF19, cpu);
+                let time_freq = (nr24 as u16 & 0b111) << 8 | nr23 as u16;
+                let not_time_freq = 4 * (2048 - time_freq as u32);
                 cpu.apu.channel_2.enabled = true;
                 cpu.apu.channel_2.counter = 64;
                 cpu.apu.channel_2.envelope_pos = nr22 & 7;
-                cpu.apu.channel_2_pos = 0;
+                cpu.apu.channel_2.freq_pos = not_time_freq;
                 cpu.apu.channel_2.volume = (nr22 & 0xF0) >> 4;
                 cpu.apu.channel_2.enabled = nr22 & 0xF8 != 0;
+                //        println!("Wrote {:4>0X} to NR24", val);
             }
             0xFF1E => {
                 cpu.apu.channel_3.enabled = true;
@@ -217,7 +237,7 @@ pub fn write_nx4_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                 let divisors = [8, 16, 32, 48, 64, 80, 96, 112];
                 let dividing_ratio = divisors[(nr43 & 0x7) as usize];
                 let shift_clock_freq = (nr43 >> 4) as u32;
-                let timer_freq = (dividing_ratio << shift_clock_freq);
+                let timer_freq = dividing_ratio << shift_clock_freq;
                 cpu.apu.channel_4.enabled = true;
                 cpu.apu.channel_4.counter = 64;
                 cpu.apu.channel_4.lfsr = 0x7FFF;
@@ -225,6 +245,7 @@ pub fn write_nx4_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                 cpu.apu.channel_4.envelope_pos = nr42 & 7;
                 cpu.apu.channel_4.volume = nr42 >> 4;
                 cpu.apu.channel_4.enabled = nr42 & 0xF8 != 0;
+                // println!("Wrote {:4>0X} to NR44", val);
             }
             _ => {}
         };
@@ -281,7 +302,6 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                 write_address(address, val, cpu);
             } //NR 21 Sound Mode 2 Duty/Sound length
             0xFF17 => {
-
                 let (vol_init, vol_add, vol_period) = (val >> 4, val & 8 != 0, val & 7);
                 cpu.apu.channel_2.volume = vol_init;
                 cpu.apu.channel_2.incr_vol = vol_add;
@@ -299,6 +319,7 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
             0xFF1D => write_address(address, val, cpu), //NR 33 Sound Mode 3 Frequency lo
             0xFF1E => write_nx4_address(address, val, cpu), //NR 34 Sound Mode 3 Frequency hi
             0xFF20 => {
+                // println!("Wrote {:4>0X} to NR41", val);
                 cpu.apu.channel_4.counter = 64 - (val & 0x3F) as u16;
                 write_address(address, val, cpu);
             } //NR 41 Sound Mode 4 Sound length
@@ -307,9 +328,13 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                 cpu.apu.channel_4.volume = vol_init;
                 cpu.apu.channel_4.incr_vol = vol_add;
                 cpu.apu.channel_4.envelope_period = vol_period;
+                // println!("Wrote {:4>0X} to NR42", val);
                 write_address(address, val, cpu);
             } //NR 42 Sound Mode 4 Envelope
-            0xFF22 => write_address(address, val, cpu), //NR 43 Sound Mode 4 Polynomial Counter
+            0xFF22 => {
+                // println!("Wrote {:4>0X} to NR43", val);
+                write_address(address, val, cpu)
+            } //NR 43 Sound Mode 4 Polynomial Counter
             0xFF23 => write_nx4_address(address, val, cpu), //NR 44 Sound Mode 4 Counter
             0xFF24 => write_address(address, val, cpu), //NR 50 Channel Control
             0xFF25 => write_address(address, val, cpu), //NR 51 Sound Output Terminal
