@@ -180,9 +180,52 @@ pub fn write_nx4_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
     // Check if should trigger
     if (val & 0x80) != 0 {
         match address {
-            0xFF14 => cpu.apu.channel_1_handle_trigger = true,
-            0xFF19 => cpu.apu.channel_2_handle_trigger = true,
-            0xFF1E => cpu.apu.channel_3_handle_trigger = true,
+            0xFF14 => {
+                let nr12 = read_address(0xFF12, cpu);
+                cpu.apu.channel_1.enabled = true;
+                cpu.apu.channel_1.counter = 64;
+                cpu.apu.channel_1.envelope_pos = nr12 & 7;
+                cpu.apu.channel_1_pos = 0;
+                cpu.apu.channel_1.volume = (nr12 & 0xF0) >> 4;
+                cpu.apu.channel_1.enabled = nr12 & 0xF8 != 0;
+            }
+            0xFF19 => {
+                let nr22 = read_address(0xFF17, cpu);
+                cpu.apu.channel_2.enabled = true;
+                cpu.apu.channel_2.counter = 64;
+                cpu.apu.channel_2.envelope_pos = nr22 & 7;
+                cpu.apu.channel_2_pos = 0;
+                cpu.apu.channel_2.volume = (nr22 & 0xF0) >> 4;
+                cpu.apu.channel_2.enabled = nr22 & 0xF8 != 0;
+            }
+            0xFF1E => {
+                cpu.apu.channel_3.enabled = true;
+                cpu.apu.channel_3.counter = 256;
+                cpu.apu.channel_3_wave_pos = 0;
+                let nr32 = read_address(0xFF1C, cpu);
+                cpu.apu.channel_3_pos = 2 *
+                                        (2048 -
+                                         (read_address(0xFF1D, cpu) as u32 |
+                                          (read_address(0xFF1E, cpu) as u32) << 8) &
+                                         0x7F);
+                cpu.apu.channel_3.volume = (nr32 & 0x60) >> 5;
+                cpu.apu.channel_3.enabled = (read_address(0xFF1A, cpu) & 0x80) != 0;
+            }
+            0xFF23 => {
+                let nr42 = read_address(0xFF21, cpu);
+                let nr43 = read_address(0xFF22, cpu);
+                let divisors = [8, 16, 32, 48, 64, 80, 96, 112];
+                let dividing_ratio = divisors[(nr43 & 0x7) as usize];
+                let shift_clock_freq = (nr43 >> 4) as u32;
+                let timer_freq = (dividing_ratio << shift_clock_freq);
+                cpu.apu.channel_4.enabled = true;
+                cpu.apu.channel_4.counter = 64;
+                cpu.apu.channel_4.lfsr = 0x7FFF;
+                cpu.apu.channel_4.freq_pos = timer_freq;
+                cpu.apu.channel_4.envelope_pos = nr42 & 7;
+                cpu.apu.channel_4.volume = nr42 >> 4;
+                cpu.apu.channel_4.enabled = nr42 & 0xF8 != 0;
+            }
             _ => {}
         };
     }
@@ -220,23 +263,54 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
             0xFF00 => write_joypad(val, cpu),
             0xFF04 => write_address(address, 0, cpu),
             0xFF10 => write_address(address, val, cpu), //NR 10 Sound Mode 1 Sweep Register
-            0xFF11 => write_address(address, val, cpu), //NR 11 Sound Mode 1 Duty/Sound length
-            0xFF12 => write_address(address, val, cpu), //NR 12 Sound Mode 1 Envelope
+            0xFF11 => {
+                cpu.apu.channel_1.counter = 64 - (val & 0x3F) as u16;
+                write_address(address, val, cpu);
+            } //NR 11 Sound Mode 1 Duty/Sound length
+            0xFF12 => {
+                let (vol_init, vol_add, vol_period) = (val >> 4, val & 8 != 0, val & 7);
+                cpu.apu.channel_1.volume = vol_init;
+                cpu.apu.channel_1.incr_vol = vol_add;
+                cpu.apu.channel_1.envelope_period = vol_period;
+                write_address(address, val, cpu)
+            } //NR 12 Sound Mode 1 Envelope
             0xFF13 => write_address(address, val, cpu), //NR 13 Sound Mode 1 Frequency lo
             0xFF14 => write_nx4_address(address, val, cpu), //NR 14 Sound Mode 1 Frequency hi
-            0xFF16 => write_address(address, val, cpu), //NR 21 Sound Mode 2 Duty/Sound length
-            0xFF17 => write_address(address, val, cpu), //NR 22 Sound Mode 2 Envelope
+            0xFF16 => {
+                cpu.apu.channel_2.counter = 64 - (val & 0x3F) as u16;
+                write_address(address, val, cpu);
+            } //NR 21 Sound Mode 2 Duty/Sound length
+            0xFF17 => {
+
+                let (vol_init, vol_add, vol_period) = (val >> 4, val & 8 != 0, val & 7);
+                cpu.apu.channel_2.volume = vol_init;
+                cpu.apu.channel_2.incr_vol = vol_add;
+                cpu.apu.channel_2.envelope_period = vol_period;
+                write_address(address, val, cpu)
+            } //NR 22 Sound Mode 2 Envelope
             0xFF18 => write_address(address, val, cpu), //NR 23 Sound Mode 2 Frequency lo
             0xFF19 => write_nx4_address(address, val, cpu), //NR 24 Sound Mode 2 Frequency hi
             0xFF1A => write_address(address, val, cpu), //NR 30 Sound Mode 3 On/Off
-            0xFF1B => write_address(address, val, cpu), //NR 31 Sound Mode 3 Sound length
+            0xFF1B => {
+                cpu.apu.channel_3.counter = 256 - val as u16;
+                write_address(address, val, cpu);
+            } //NR 31 Sound Mode 3 Sound length
             0xFF1C => write_address(address, val, cpu), //NR 32 Sound Mode 3 Select Output Level
             0xFF1D => write_address(address, val, cpu), //NR 33 Sound Mode 3 Frequency lo
             0xFF1E => write_nx4_address(address, val, cpu), //NR 34 Sound Mode 3 Frequency hi
-            0xFF20 => write_address(address, val, cpu), //NR 41 Sound Mode 4 Sound length
-            0xFF21 => write_address(address, val, cpu), //NR 42 Sound Mode 4 Envelope
+            0xFF20 => {
+                cpu.apu.channel_4.counter = 64 - (val & 0x3F) as u16;
+                write_address(address, val, cpu);
+            } //NR 41 Sound Mode 4 Sound length
+            0xFF21 => {
+                let (vol_init, vol_add, vol_period) = (val >> 4, val & 8 != 0, val & 7);
+                cpu.apu.channel_4.volume = vol_init;
+                cpu.apu.channel_4.incr_vol = vol_add;
+                cpu.apu.channel_4.envelope_period = vol_period;
+                write_address(address, val, cpu);
+            } //NR 42 Sound Mode 4 Envelope
             0xFF22 => write_address(address, val, cpu), //NR 43 Sound Mode 4 Polynomial Counter
-            0xFF23 => write_address(address, val, cpu), //NR 44 Sound Mode 4 Counter
+            0xFF23 => write_nx4_address(address, val, cpu), //NR 44 Sound Mode 4 Counter
             0xFF24 => write_address(address, val, cpu), //NR 50 Channel Control
             0xFF25 => write_address(address, val, cpu), //NR 51 Sound Output Terminal
             0xFF26 => write_address(address, val, cpu), //NR 52 Sound On/Off
@@ -381,6 +455,13 @@ pub fn read_channel_3_addresses(cpu: &mut Cpu) -> (u8, u8, u8, u8, u8) {
      read_address(0xFF1C, cpu),
      read_address(0xFF1D, cpu),
      read_address(0xFF1E, cpu))
+}
+
+pub fn read_channel_4_addresses(cpu: &mut Cpu) -> (u8, u8, u8, u8) {
+    (read_address(0xFF20, cpu),
+     read_address(0xFF21, cpu),
+     read_address(0xFF22, cpu),
+     read_address(0xFF23, cpu))
 }
 
 pub fn read_address_i8(address: usize, cpu: &mut Cpu) -> i8 {
