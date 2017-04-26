@@ -182,9 +182,14 @@ pub fn daa(curr_addr: usize, cpu: &mut Cpu) -> usize {
     }
 
     flag::reset(Flag::H, cpu);
-    flag::bool_set(Flag::C, (a_val & 0x100) == 0x100, cpu);
+    flag::reset(Flag::Z, cpu);
+    if (a_val & 0x100) == 0x100 {
+        flag::set(Flag::C, cpu);
+    }
     a_val &= 0xFF;
-    flag::bool_set(Flag::Z, a_val == 0, cpu);
+    if a_val == 0 {
+        flag::set(Flag::Z, cpu);
+    }
     cpu.a = a_val as u8;
     curr_addr
 }

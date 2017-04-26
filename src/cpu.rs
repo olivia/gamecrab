@@ -4,6 +4,7 @@ use std::io::prelude::*;
 use interrupt::*;
 use lcd::*;
 use apu::*;
+use register::*;
 use std::path::Path;
 use self::nfd::Response;
 
@@ -350,7 +351,12 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                 cpu.has_booted = true;
                 println!("==================BOOTED==================");
                 println!("0x0147: {:4>0X} (cartridge type)", read_address(0x147, cpu));
+                // initialize memory based on pandocs
                 write_address(0xFF00, 0xCF, cpu);
+                write_multi_register(Register::AF, 0x01B0, cpu);
+                write_multi_register(Register::BC, 0x0013, cpu);
+                write_multi_register(Register::DE, 0x00D8, cpu);
+                write_multi_register(Register::HL, 0x014D, cpu);
                 if read_address(0x147, cpu) == 1 {
                     println!("MBC1 Detected");
                     cpu.mbc_1 = true;
