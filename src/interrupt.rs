@@ -8,10 +8,11 @@ pub enum Interrupt {
     LCD,
     Timer,
     Joypad,
+    Serial,
 }
 
 pub fn exec_halt_interrupts(address: usize, cpu: &mut Cpu) -> usize {
-    let interrupts = [VBlank, LCD, Timer, Joypad];
+    let interrupts = [VBlank, LCD, Timer, Serial, Joypad];
     interrupts.iter()
         .find(|&interrupt| interrupt.is_requested(cpu) && interrupt.is_enabled(cpu))
         .map_or(address, |interrupt| if cpu.interrupt_master_enabled {
@@ -25,7 +26,7 @@ pub fn exec_halt_interrupts(address: usize, cpu: &mut Cpu) -> usize {
 
 pub fn exec_interrupts(address: usize, cpu: &mut Cpu) -> usize {
     if cpu.interrupt_master_enabled {
-        let interrupts = [VBlank, LCD, Timer, Joypad];
+        let interrupts = [VBlank, LCD, Timer, Serial, Joypad];
         interrupts.iter()
             .find(|&interrupt| interrupt.is_requested(cpu) && interrupt.is_enabled(cpu))
             .map_or(address, |interrupt| interrupt.exec(address, cpu))
@@ -70,7 +71,8 @@ impl Interrupt {
             VBlank => 0,
             LCD => 1,
             Timer => 2,
-            Joypad => 3,
+            Serial => 3,
+            Joypad => 4,
         }
     }
 
@@ -79,6 +81,7 @@ impl Interrupt {
             VBlank => 0x40,
             LCD => 0x48,
             Timer => 0x50,
+            Serial => 0x58,
             Joypad => 0x60,
         }
     }

@@ -42,6 +42,7 @@ pub struct Cpu {
     pub sprite_mode: u8,
     pub halted: bool,
     pub apu: Apu,
+    pub serial_transfer_timer: i32,
 }
 
 impl Cpu {
@@ -173,6 +174,7 @@ impl Default for Cpu {
             sprite_mode: 0,
             window_mode: 0,
             apu: Default::default(),
+            serial_transfer_timer: 0,
         }
     }
 }
@@ -291,6 +293,18 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                 write_address(address - 0x2000, val, cpu)
             }
             0xFF00 => write_joypad(val, cpu),
+            0xFF01 => {
+                println!("Writing {:4>0X} to FF01", val);
+                write_address(address, val, cpu)
+            }
+            0xFF02 => {
+                println!("Writing {:4>0X} to FF02", val);
+                if val & 0x81 == 0x81 {
+                    // initiate transfer using internal clock, this takes 4096 cycles
+                    cpu.serial_transfer_timer = 4096;
+                }
+                write_address(address, val, cpu)
+            }
             0xFF04 => write_address(address, 0, cpu),
             0xFF10 => write_address(address, val, cpu), //NR 10 Sound Mode 1 Sweep Register
             0xFF11 => {
@@ -447,6 +461,14 @@ pub fn safe_read_address(address: usize, cpu: &mut Cpu) -> u8 {
             0xE000...0xFDFF => read_address(address - 0x2000, cpu),
             0xFF41 => read_stat_address(cpu), 
             0xFF00 => read_joypad(cpu),
+            0xFF01 => {
+                println!("reading from ff01");
+                0xFF
+            }
+            0xFF02 => {
+                println!("reading from ff02");
+                read_address(address, cpu)
+            }
             _ => read_address(address, cpu),
         }
     } else {

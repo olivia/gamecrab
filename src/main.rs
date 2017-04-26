@@ -22,7 +22,7 @@ fn disassemble_rom(start: usize, limit: usize) {
     let mut cpu: cpu::Cpu = Default::default();
     cpu.load_bootrom("DMG_ROM.bin");
     cpu.has_booted = true;
-    cpu.load_cart("tetris.gb");
+    cpu.load_cart("Stargate.gb");
     let mut next_addr = start;
     for _ in 0..limit {
         let (op_length, instr, _) = opcode::lookup_op(next_addr, &mut cpu);
@@ -110,6 +110,13 @@ fn run_rom() {
                     if cpu.dma_transfer_cycles_left > 0 {
                         cpu.dma_transfer_cycles_left -= 4 as i32;
                     }
+                    if cpu.serial_transfer_timer > 0 {
+                        cpu.serial_transfer_timer -= 4;
+                        if cpu.serial_transfer_timer <= 0 {
+                            cpu::write_address(0xFF01, 0xFF, &mut cpu);
+                            interrupt::Interrupt::Serial.request(&mut cpu);
+                        }
+                    }
                     cpu.inc_clocks(4);
                     let interrupt_addr = interrupt::exec_halt_interrupts(next_addr, &mut cpu);
                     if !cpu.halted && (interrupt_addr == next_addr + 1) {
@@ -165,6 +172,14 @@ fn run_rom() {
                     if cpu.dma_transfer_cycles_left > 0 {
                         cpu.dma_transfer_cycles_left -= (cycles + cycle_offset) as i32;
                     }
+                    if cpu.serial_transfer_timer > 0 {
+                        cpu.serial_transfer_timer -= (cycles + cycle_offset) as i32;
+                        if cpu.serial_transfer_timer <= 0 {
+                            cpu::write_address(0xFF01, 0xFF, &mut cpu);
+                            interrupt::Interrupt::Serial.request(&mut cpu);
+                        }
+                    }
+
                     cpu.inc_clocks(cycles + cycle_offset);
                     let interrupt_addr = interrupt::exec_interrupts(next_addr, &mut cpu);
                     if next_addr != interrupt_addr {
@@ -225,5 +240,5 @@ fn run_rom() {
 
 fn main() {
     run_rom();
-    // disassemble_rom(0x56, 100);
+    // disassemble_rom(0xB7, 100);
 }
