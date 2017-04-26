@@ -1,6 +1,8 @@
 extern crate piston_window;
 use cpu;
 use joypad;
+
+use interrupt::Interrupt;
 use self::piston_window::Key;
 
 pub fn handle_key_release(key: Key, cpu: &mut cpu::Cpu) {

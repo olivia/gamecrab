@@ -11,24 +11,24 @@ pub fn ld_m(reg: Register, val: u16, curr_addr: usize, cpu: &mut Cpu) -> usize {
 }
 
 pub fn ldhl_sp(val: i8, curr_addr: usize, cpu: &mut Cpu) -> usize {
-    let sp = cpu.sp;
-    let new_val = wrapping_off_u16_i8(sp, val);
-    write_multi_register(Register::HL, new_val, cpu);
+    let new_val = wrapping_off_u16_i8(cpu.sp, val);
     flag::mod_flags(((Flag::Z, false),
                      (Flag::N, false),
-                     (Flag::H, 0x000F < ((cpu.sp & 0x000F) + ((val as u8) as u16) & 0x000F)),
-                     (Flag::C, 0x00FF < ((cpu.sp & 0x00FF) + (((val as u8) as u16) & 0x00FF)))),
+                     (Flag::H, 0xF < ((cpu.sp & 0xF) + ((val as u8) & 0xF) as u16)),
+                     (Flag::C, 0xFF < ((cpu.sp & 0xFF) + ((val as u8) as u16)))),
                     cpu);
+    write_multi_register(Register::HL, new_val, cpu);
     curr_addr
 }
 
 pub fn add_to_sp(num: i8, curr_addr: usize, cpu: &mut Cpu) -> usize {
-    cpu.sp = wrapping_off_u16_i8(cpu.sp, num);
+    let new_sp = wrapping_off_u16_i8(cpu.sp, num);
     flag::mod_flags(((Flag::N, false),
-                     (Flag::H, 0x000F < ((cpu.sp & 0x000F) + ((num as u8) as u16) & 0x000F)),
-                     (Flag::C, 0x00FF < ((cpu.sp & 0x00FF) + (((num as u8) as u16) & 0x00FF))),
+                     (Flag::H, 0xF < ((cpu.sp & 0xF) + ((num as u8) & 0xF) as u16)),
+                     (Flag::C, 0xFF < ((cpu.sp & 0xFF) + ((num as u8) as u16))),
                      (Flag::Z, false)),
                     cpu);
+    cpu.sp = new_sp;
     curr_addr
 }
 
