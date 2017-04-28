@@ -205,7 +205,7 @@ pub fn gen_samples(sample_len: u8, cpu: &mut Cpu) {
     if cpu.apu.channel_3.enabled {
         mix_channel_3(&mut result, cpu);
     }
-    if cpu.apu.channel_4.enabled {
+    if *cpu.apu.channel_4.enabled() {
         mix_channel_4(&mut result, cpu);
     }
     cpu.apu.audio_vec_queue.append(&mut result);
@@ -220,15 +220,6 @@ pub fn queue(cpu: &mut Cpu) {
     cpu.apu.audio_queue.queue(&cpu.apu.audio_vec_queue);
     cpu.apu.audio_vec_queue.clear();
     cpu.apu.prev_size = cpu.apu.audio_queue.size() as i32;
-}
-
-fn step_length_channel<T: HasWaveChannel>(channel: &mut T, length_enable: bool) {
-    if *channel.enabled() && length_enable {
-        if *channel.counter() == 0 {
-            *channel.enabled() = false;
-        }
-        *channel.counter() -= 1;
-    }
 }
 
 pub fn step_length(cpu: &mut Cpu) {
@@ -452,18 +443,17 @@ pub fn step_sweep(cpu: &mut Cpu) {
 
 pub fn step_envelope(cpu: &mut Cpu) {
     fn go<T: HasWaveChannel + HasEnvelope>(channel: &mut T) {
-        let &mut wave_channel = channel.wave_channel();
-        if wave_channel.enabled && *channel.envelope_period() != 0 {
-            if *channel.incr_vol() && wave_channel.volume < 15 {
+        if *channel.enabled() && *channel.envelope_period() != 0 {
+            if *channel.incr_vol() && *channel.volume() < 15 {
                 if *channel.envelope_pos() == 0 {
-                    wave_channel.volume += 1;
+                    *channel.volume() += 1;
                     *channel.envelope_pos() = *channel.envelope_period();
                 } else {
                     *channel.envelope_pos() -= 1;
                 }
-            } else if !*channel.incr_vol() && wave_channel.volume > 0 {
+            } else if !*channel.incr_vol() && *channel.volume() > 0 {
                 if *channel.envelope_pos() == 0 {
-                    wave_channel.volume -= 1;
+                    *channel.volume() -= 1;
                     *channel.envelope_pos() = *channel.envelope_period();
                 } else {
                     *channel.envelope_pos() -= 1;
