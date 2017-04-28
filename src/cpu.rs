@@ -188,22 +188,22 @@ pub fn write_nx4_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                 let nr14 = read_address(0xFF14, cpu);
                 let time_freq = (nr14 as u16 & 0b111) << 8 | nr13 as u16;
                 let not_time_freq = 4 * (2048 - time_freq as u32);
-                cpu.apu.channel_1.enabled = true;
-                if cpu.apu.channel_1.counter == 0 {
-                    cpu.apu.channel_1.counter = 64;
+                *cpu.apu.channel_1.enabled() = true;
+                if *cpu.apu.channel_1.counter() == 0 {
+                    *cpu.apu.channel_1.counter() = 64;
                 }
                 cpu.apu.channel_1.envelope_pos = nr12 & 7;
-                cpu.apu.channel_1.freq_pos = not_time_freq;
+                *cpu.apu.channel_1.freq_pos() = not_time_freq;
                 cpu.apu.channel_1_shadow_freq = not_time_freq;
                 cpu.apu.sweep_period = (nr10 >> 4) & 7;
                 cpu.apu.sweep_clock = cpu.apu.sweep_period;
                 let shift = nr10 & 7;
                 cpu.apu.sweeping = cpu.apu.sweep_clock != 0 || shift != 0;
                 cpu.apu.sweep_negate = (nr10 & 8) != 0;
-                cpu.apu.channel_1.volume = (nr12 & 0xF0) >> 4;
-                cpu.apu.channel_1.enabled = nr12 & 0xF8 != 0;
+                *cpu.apu.channel_1.volume() = (nr12 & 0xF0) >> 4;
+                *cpu.apu.channel_1.enabled() = nr12 & 0xF8 != 0;
                 if cpu.apu.sweeping && cpu.apu.freq_sweep(shift, cpu.apu.sweep_negate) > 2047 {
-                    cpu.apu.channel_1.enabled = false;
+                    *cpu.apu.channel_1.enabled() = false;
                 }
 
             }
@@ -213,20 +213,20 @@ pub fn write_nx4_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                 let nr24 = read_address(0xFF19, cpu);
                 let time_freq = (nr24 as u16 & 0b111) << 8 | nr23 as u16;
                 let not_time_freq = 4 * (2048 - time_freq as u32);
-                cpu.apu.channel_2.enabled = true;
-                if cpu.apu.channel_2.counter == 0 {
-                    cpu.apu.channel_2.counter = 64;
+                *cpu.apu.channel_2.enabled() = true;
+                if *cpu.apu.channel_2.counter() == 0 {
+                    *cpu.apu.channel_2.counter() = 64;
                 }
                 cpu.apu.channel_2.envelope_pos = nr22 & 7;
-                cpu.apu.channel_2.freq_pos = not_time_freq;
-                cpu.apu.channel_2.volume = (nr22 & 0xF0) >> 4;
-                cpu.apu.channel_2.enabled = nr22 & 0xF8 != 0;
+                *cpu.apu.channel_2.freq_pos() = not_time_freq;
+                *cpu.apu.channel_2.volume() = (nr22 & 0xF0) >> 4;
+                *cpu.apu.channel_2.enabled() = nr22 & 0xF8 != 0;
                 //        println!("Wrote {:4>0X} to NR24", val);
             }
             0xFF1E => {
-                cpu.apu.channel_3.enabled = true;
-                if cpu.apu.channel_3.counter == 0 {
-                    cpu.apu.channel_3.counter = 256;
+                *cpu.apu.channel_3.enabled() = true;
+                if *cpu.apu.channel_3.counter() == 0 {
+                    *cpu.apu.channel_3.counter() = 256;
                 }
                 cpu.apu.channel_3_wave_pos = 0;
                 let nr32 = read_address(0xFF1C, cpu);
@@ -235,8 +235,8 @@ pub fn write_nx4_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                                          (read_address(0xFF1D, cpu) as u32 |
                                           (read_address(0xFF1E, cpu) as u32) << 8) &
                                          0x7F);
-                cpu.apu.channel_3.volume = (nr32 & 0x60) >> 5;
-                cpu.apu.channel_3.enabled = (read_address(0xFF1A, cpu) & 0x80) != 0;
+                *cpu.apu.channel_3.volume() = (nr32 & 0x60) >> 5;
+                *cpu.apu.channel_3.enabled() = (read_address(0xFF1A, cpu) & 0x80) != 0;
             }
             0xFF23 => {
                 let nr42 = read_address(0xFF21, cpu);
@@ -245,15 +245,15 @@ pub fn write_nx4_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                 let dividing_ratio = divisors[(nr43 & 0x7) as usize];
                 let shift_clock_freq = nr43 >> 4 as u32;
                 let timer_freq = dividing_ratio << shift_clock_freq;
-                cpu.apu.channel_4.enabled = true;
-                if cpu.apu.channel_4.counter == 0 {
-                    cpu.apu.channel_4.counter = 64;
+                *cpu.apu.channel_4.enabled() = true;
+                if *cpu.apu.channel_4.counter() == 0 {
+                    *cpu.apu.channel_4.counter() = 64;
                 }
                 cpu.apu.channel_4.lfsr = 0x7FFF;
-                cpu.apu.channel_4.freq_pos = timer_freq;
+                *cpu.apu.channel_4.freq_pos() = timer_freq;
                 cpu.apu.channel_4.envelope_pos = nr42 & 7;
-                cpu.apu.channel_4.volume = nr42 >> 4;
-                cpu.apu.channel_4.enabled = nr42 & 0xF8 != 0;
+                *cpu.apu.channel_4.volume() = nr42 >> 4;
+                *cpu.apu.channel_4.enabled() = nr42 & 0xF8 != 0;
                 // println!("Wrote {:4>0X} to NR44", val);
             }
             _ => {}
@@ -294,12 +294,12 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
             0xFF04 => write_address(address, 0, cpu),
             0xFF10 => write_address(address, val, cpu), //NR 10 Sound Mode 1 Sweep Register
             0xFF11 => {
-                cpu.apu.channel_1.counter = 64 - (val & 0x3F) as u16;
+                *cpu.apu.channel_1.counter() = 64 - (val & 0x3F) as u16;
                 write_address(address, val, cpu);
             } //NR 11 Sound Mode 1 Duty/Sound length
             0xFF12 => {
                 let (vol_init, vol_add, vol_period) = (val >> 4, val & 8 != 0, val & 7);
-                cpu.apu.channel_1.volume = vol_init;
+                *cpu.apu.channel_1.volume() = vol_init;
                 cpu.apu.channel_1.incr_vol = vol_add;
                 cpu.apu.channel_1.envelope_period = vol_period;
                 write_address(address, val, cpu)
@@ -307,12 +307,12 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
             0xFF13 => write_address(address, val, cpu), //NR 13 Sound Mode 1 Frequency lo
             0xFF14 => write_nx4_address(address, val, cpu), //NR 14 Sound Mode 1 Frequency hi
             0xFF16 => {
-                cpu.apu.channel_2.counter = 64 - (val & 0x3F) as u16;
+                *cpu.apu.channel_2.counter() = 64 - (val & 0x3F) as u16;
                 write_address(address, val, cpu);
             } //NR 21 Sound Mode 2 Duty/Sound length
             0xFF17 => {
                 let (vol_init, vol_add, vol_period) = (val >> 4, val & 8 != 0, val & 7);
-                cpu.apu.channel_2.volume = vol_init;
+                *cpu.apu.channel_2.volume() = vol_init;
                 cpu.apu.channel_2.incr_vol = vol_add;
                 cpu.apu.channel_2.envelope_period = vol_period;
                 write_address(address, val, cpu)
@@ -321,19 +321,19 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
             0xFF19 => write_nx4_address(address, val, cpu), //NR 24 Sound Mode 2 Frequency hi
             0xFF1A => write_address(address, val, cpu), //NR 30 Sound Mode 3 On/Off
             0xFF1B => {
-                cpu.apu.channel_3.counter = 256 - val as u16;
+                *cpu.apu.channel_3.counter() = 256 - val as u16;
                 write_address(address, val, cpu);
             } //NR 31 Sound Mode 3 Sound length
             0xFF1C => write_address(address, val, cpu), //NR 32 Sound Mode 3 Select Output Level
             0xFF1D => write_address(address, val, cpu), //NR 33 Sound Mode 3 Frequency lo
             0xFF1E => write_nx4_address(address, val, cpu), //NR 34 Sound Mode 3 Frequency hi
             0xFF20 => {
-                cpu.apu.channel_4.counter = 64 - (val & 0x3F) as u16;
+                *cpu.apu.channel_4.counter() = 64 - (val & 0x3F) as u16;
                 write_address(address, val, cpu);
             } //NR 41 Sound Mode 4 Sound length
             0xFF21 => {
                 let (vol_init, vol_add, vol_period) = (val >> 4, val & 8 != 0, val & 7);
-                cpu.apu.channel_4.volume = vol_init;
+                *cpu.apu.channel_4.volume() = vol_init;
                 cpu.apu.channel_4.incr_vol = vol_add;
                 cpu.apu.channel_4.envelope_period = vol_period;
                 write_address(address, val, cpu);

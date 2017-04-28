@@ -26,7 +26,7 @@ pub struct NoiseChannel {
     pub envelope_period: u8,
 }
 
-trait HasWaveChannel {
+pub trait HasWaveChannel {
     fn wave_channel(&mut self) -> &mut WaveChannel;
 
     fn counter(&mut self) -> &mut u16 {
