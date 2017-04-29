@@ -521,9 +521,8 @@ pub fn read_channel_2_addresses(cpu: &mut Cpu) -> (u8, u8, u8) {
     (cpu.memory[0xFF16], cpu.memory[0xFF18], cpu.memory[0xFF19])
 }
 
-pub fn read_channel_3_addresses(cpu: &mut Cpu) -> (u8, u8, u8, u8, u8) {
+pub fn read_channel_3_addresses(cpu: &mut Cpu) -> (u8, u8, u8, u8) {
     (read_address(0xFF1A, cpu),
-     read_address(0xFF1B, cpu),
      read_address(0xFF1C, cpu),
      read_address(0xFF1D, cpu),
      read_address(0xFF1E, cpu))
