@@ -6,7 +6,7 @@ pub struct WaveChannel {
     pub counter: u16,
     pub enabled: bool,
     pub freq_pos: u32,
-    pub wave_pos: u8,
+    pub wave_pos: usize,
     pub volume: u8,
 }
 
@@ -309,7 +309,7 @@ pub fn mix_channel_square(result: &mut Vec<i16>,
 
 #[allow(non_snake_case)]
 pub fn mix_channel_3(result: &mut Vec<i16>,
-                     channel_3: &mut WaveChannel,
+                     channel: &mut WaveChannel,
                      wave_table: &[u8],
                      registers: (u8, u8, u8, u8),
                      (left_out, right_out): (u8, u8)) {
@@ -325,32 +325,37 @@ pub fn mix_channel_3(result: &mut Vec<i16>,
     let volume_shift = ((NR32 & 0x60) >> 5) as i16;
     if (NR30 & 0x80) != 0 {
         let downsample = 1 + 8192 / result.len();
-        let mut freq = channel_3.freq_pos;
-        let mut sample_idx = 0;
-        for x in 0..8192 {
-            // cycles
-            if freq == 0 {
-                freq = not_time_freq;
-                channel_3.wave_pos += 1;
-                channel_3.wave_pos %= 32;
-                // reload
-            }
-            freq -= 1;
-            if volume_shift != 0 && x % downsample == 0 {
-                let sample_cell = wave_table[channel_3.wave_pos as usize / 2];
-                let sample_is_left = channel_3.wave_pos & 1 == 0;
+        let init_freq = channel.freq_pos;
+        let init_wave = channel.wave_pos;
+        for x in 0..result.len() {
+            if volume_shift != 0 {
+                let est_wave_pos =
+                    cond!(init_freq as usize > not_time_freq as usize + x * downsample,
+                          init_wave,
+                          (init_wave +
+                           ((x * downsample + not_time_freq as usize - init_freq as usize) /
+                            not_time_freq as usize) as usize) % 32);
+                let sample_cell = wave_table[est_wave_pos as usize / 2];
+                let sample_is_left = est_wave_pos & 1 == 0;
                 let sample = cond!(sample_is_left, sample_cell >> 4, sample_cell & 0x0F);
-                result[sample_idx] += (volume_step * (2 * sample as i16 - 15)) /
-                                      (1 << (volume_shift - 1));
-                sample_idx += 1;
+                result[x] += (volume_step * (2 * sample as i16 - 15)) / (1 << (volume_shift - 1));
             }
         }
-        channel_3.freq_pos = freq;
+
+        channel.wave_pos = cond!(init_freq as usize > not_time_freq as usize + 8191,
+                      init_wave,
+                      (init_wave +
+                       ((8191 + not_time_freq as usize - init_freq as usize) /
+                        not_time_freq as usize) as usize) % 32);
+        channel.freq_pos = cond!(init_freq < 8192,
+                                 (not_time_freq - (8192 - init_freq) % not_time_freq) %
+                                 not_time_freq,
+                                 init_freq - 8192);
     }
 }
 
 #[allow(non_snake_case)]
-pub fn mix_channel_4(result: &mut Vec<i16>, channel_4: &mut NoiseChannel, nr43: u8, nr51: u8) {
+pub fn mix_channel_4(result: &mut Vec<i16>, channel: &mut NoiseChannel, nr43: u8, nr51: u8) {
     let right_out = (nr51 >> 3) & 1;
     let left_out = (nr51 >> 7) & 1;
     let divisors = [8, 16, 32, 48, 64, 80, 96, 112];
@@ -363,21 +368,21 @@ pub fn mix_channel_4(result: &mut Vec<i16>, channel_4: &mut NoiseChannel, nr43: 
         0 => 0,
         _ => unreachable!(),
     } as i16;
-    let volume_init = channel_4.volume as i16;
+    let volume_init = channel.volume as i16;
     let volume = volume_step * volume_init;
     let half_width = nr43 & 0x08 != 0; // whether the shift register is 15bits of 7 bits
     if shift_clock_freq < 15 && timer_freq as u32 != 0 {
         let downsample = 1 + 8192 / result.len();
-        let mut freq = channel_4.freq_pos;
+        let mut freq = channel.freq_pos;
         let mut sample_idx = 0;
         for x in 0..8192 {
             // cycles
             if freq == 0 {
                 freq = timer_freq;
-                let lfsr = channel_4.lfsr;
+                let lfsr = channel.lfsr;
                 let new_bit = (lfsr ^ (lfsr >> 1)) & 1;
                 let part_res = (new_bit << 14) | (lfsr >> 1);
-                channel_4.lfsr = if half_width {
+                channel.lfsr = if half_width {
                     (part_res & (0x7FFF - 0x0040)) | (new_bit << 6)
                 } else {
                     part_res
@@ -385,11 +390,11 @@ pub fn mix_channel_4(result: &mut Vec<i16>, channel_4: &mut NoiseChannel, nr43: 
             }
             freq -= 1;
             if volume != 0 && x % downsample == 0 {
-                result[sample_idx] += cond!((channel_4.lfsr & 1) == 0, volume, -volume);
+                result[sample_idx] += cond!((channel.lfsr & 1) == 0, volume, -volume);
                 sample_idx += 1;
             }
         }
-        channel_4.freq_pos = freq;
+        channel.freq_pos = freq;
     }
 }
 
