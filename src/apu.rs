@@ -136,55 +136,6 @@ impl Apu {
     }
 }
 
-pub fn gen_channel_1(sample_len: usize,
-                     channel: &mut SquareChannel,
-                     registers: (u8, u8, u8),
-                     nr51: u8)
-                     -> Vec<i16> {
-    let mut result = vec![0; sample_len as usize];
-    if channel.enabled {
-        mix_channel_square(&mut result, channel, registers, ((nr51 >> 4) & 1, nr51 & 1));
-    }
-    result
-}
-pub fn gen_channel_2(sample_len: usize,
-                     channel: &mut SquareChannel,
-                     registers: (u8, u8, u8),
-                     nr51: u8)
-                     -> Vec<i16> {
-    let mut result = vec![0; sample_len as usize];
-    if channel.enabled {
-        mix_channel_square(&mut result,
-                           channel,
-                           registers,
-                           ((nr51 >> 5) & 1, (nr51 >> 1) & 1));
-    }
-    result
-}
-pub fn gen_channel_3(sample_len: usize,
-                     channel: &mut WaveChannel,
-                     wave_table: &[u8],
-                     registers: (u8, u8, u8, u8),
-                     nr51: u8)
-                     -> Vec<i16> {
-    let mut result = vec![0; sample_len as usize];
-    if channel.enabled {
-        // mix_channel_3(&mut result, channel, wave_table, registers, nr51);
-    }
-    result
-}
-pub fn gen_channel_4(sample_len: usize,
-                     channel: &mut NoiseChannel,
-                     registers: (u8),
-                     nr51: u8)
-                     -> Vec<i16> {
-    let mut result = vec![0; sample_len as usize];
-    if channel.enabled {
-        mix_channel_4(&mut result, channel, registers, nr51);
-    }
-    result
-}
-
 pub fn gen_samples(sample_len: u8, cpu: &mut Cpu) {
     let mut result = vec![0; sample_len as usize];
     let nr51 = cpu.memory[0xFF25];
@@ -371,7 +322,7 @@ pub fn mix_channel_4(result: &mut Vec<i16>, channel: &mut NoiseChannel, nr43: u8
     let volume_init = channel.volume as i16;
     let volume = volume_step * volume_init;
     let half_width = nr43 & 0x08 != 0; // whether the shift register is 15bits of 7 bits
-    if shift_clock_freq < 15 && timer_freq as u32 != 0 {
+    if shift_clock_freq < 14 && timer_freq as u32 != 0 {
         let downsample = 1 + 8192 / result.len();
         let mut freq = channel.freq_pos;
         let mut sample_idx = 0;
@@ -380,7 +331,9 @@ pub fn mix_channel_4(result: &mut Vec<i16>, channel: &mut NoiseChannel, nr43: u8
             if freq == 0 {
                 freq = timer_freq;
                 let lfsr = channel.lfsr;
-                let new_bit = (lfsr ^ (lfsr >> 1)) & 1;
+                // Even though the documentation says that it should use the lower two bits, this sounds more accurate :/
+                let tap_shift = cond!(half_width, 0, 0);
+                let new_bit = ((lfsr ^ (lfsr >> 1)) >> tap_shift) & 1;
                 let part_res = (new_bit << 14) | (lfsr >> 1);
                 channel.lfsr = if half_width {
                     (part_res & (0x7FFF - 0x0040)) | (new_bit << 6)
