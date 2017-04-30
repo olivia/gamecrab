@@ -32,6 +32,10 @@ pub struct Cpu {
     pub mbc_1: bool,
     pub mbc_1_ram: bool,
     pub mbc_1_battery: bool,
+    pub mbc_3: bool,
+    pub mbc_3_ram: bool,
+    pub mbc_3_battery: bool,
+    pub mbc_3_rom_bank: usize,
     pub ram_banking_mode: bool,
     pub ram_enabled: bool,
     pub ram_or_rom_bank: usize,
@@ -42,6 +46,7 @@ pub struct Cpu {
     pub sprite_mode: u8,
     pub halted: bool,
     pub apu: Apu,
+    pub serial_transfer_timer: i32,
 }
 
 impl Cpu {
@@ -163,8 +168,12 @@ impl Default for Cpu {
             mbc_1: false,
             mbc_1_ram: false,
             mbc_1_battery: false,
+            mbc_3: false,
+            mbc_3_ram: false,
+            mbc_3_battery: false,
             ram_or_rom_bank: 0,
             lo_rom_bank: 0,
+            mbc_3_rom_bank: 1,
             dma_transfer_cycles_left: 0,
             ram_enabled: false,
             ram_banking_mode: false,
@@ -173,6 +182,7 @@ impl Default for Cpu {
             sprite_mode: 0,
             window_mode: 0,
             apu: Default::default(),
+            serial_transfer_timer: 0,
         }
     }
 }
@@ -270,7 +280,7 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
         0x4000...0x5FFF => false, //RAM bank number or high bits of rom bank number
         0x6000...0x7FFF => false, //ROM/RAM select
         0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
-        0xA000...0xBFFF => cpu.ram_enabled, // currently we have no ram, used for selecting raem
+        0xA000...0xBFFF => cpu.ram_enabled, 
         0xFE00...0xFE9F => {
             // OAM
             !LCDC::Power.is_set(cpu) ||
@@ -291,6 +301,18 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                 write_address(address - 0x2000, val, cpu)
             }
             0xFF00 => write_joypad(val, cpu),
+            0xFF01 => {
+                println!("Writing {:4>0X} to FF01", val);
+                write_address(address, val, cpu)
+            }
+            0xFF02 => {
+                println!("Writing {:4>0X} to FF02", val);
+                if val & 0x81 == 0x81 {
+                    // initiate transfer using internal clock, this takes 4096 cycles
+                    cpu.serial_transfer_timer = 4096;
+                }
+                write_address(address, val, cpu)
+            }
             0xFF04 => write_address(address, 0, cpu),
             0xFF10 => write_address(address, val, cpu), //NR 10 Sound Mode 1 Sweep Register
             0xFF11 => {
@@ -372,6 +394,12 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                     cpu.mbc_1_ram = true;
                     cpu.mbc_1_battery = true;
                 }
+                if read_address(0x147, cpu) == 0x13 {
+                    println!("MBC3+RAM+BATTERY Detected");
+                    cpu.mbc_3 = true;
+                    cpu.mbc_3_ram = true;
+                    cpu.mbc_3_battery = true;
+                }
             }
             _ => write_address(address, val, cpu),
         }
@@ -383,14 +411,29 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
             }
         } else {
             match address {
-                0x0000...0x1FFF => cpu.ram_enabled = cpu.mbc_1_ram && ((0xA & val) == 0xA),
-                0x2000...0x3FFF => select_rom_bank_lo(val, cpu),
+                0x0000...0x1FFF => {
+                    cpu.ram_enabled = (cpu.mbc_1_ram || cpu.mbc_3_ram) && ((0xA & val) == 0xA)
+                }
+                0x2000...0x3FFF => {
+                    if cpu.mbc_1 {
+                        select_rom_bank_lo(val, cpu);
+                    } else if cpu.mbc_3 {
+                        select_mbc_3_rom_bank(val, cpu);
+                    }
+                }
                 0x4000...0x5FFF => select_rom_or_ram_bank_hi(val, cpu),
-                0x6000...0x7FFF => cpu.ram_banking_mode = val == 1,
+                0x6000...0x7FFF => cpu.ram_banking_mode = (val == 1) || cpu.mbc_3_ram,
                 _ => {}
             }
         }
     }
+}
+
+fn select_mbc_3_rom_bank(bank: u8, cpu: &mut Cpu) {
+    cpu.mbc_3_rom_bank = match bank {
+        0 => 1,
+        _ => bank as usize & 0x7F, // Select 7 bits 
+    };
 }
 
 fn select_rom_bank_lo(bank: u8, cpu: &mut Cpu) {
@@ -447,6 +490,8 @@ pub fn safe_read_address(address: usize, cpu: &mut Cpu) -> u8 {
             0xE000...0xFDFF => read_address(address - 0x2000, cpu),
             0xFF41 => read_stat_address(cpu), 
             0xFF00 => read_joypad(cpu),
+            0xFF01 => 0xFF, // Serial Data should return 0xFF if no game boy is connect to the cable
+            0xFF02 => read_address(address, cpu),
             _ => read_address(address, cpu),
         }
     } else {
@@ -468,24 +513,16 @@ pub fn read_joypad(cpu: &mut Cpu) -> u8 {
     }
 }
 
-pub fn read_channel_1_addresses(cpu: &mut Cpu) -> (u8, u8, u8, u8, u8) {
-    (read_address(0xFF10, cpu),
-     read_address(0xFF11, cpu),
-     read_address(0xFF12, cpu),
-     read_address(0xFF13, cpu),
-     read_address(0xFF14, cpu))
+pub fn read_channel_1_addresses(cpu: &mut Cpu) -> (u8, u8, u8) {
+    (cpu.memory[0xFF11], cpu.memory[0xFF13], cpu.memory[0xFF14])
 }
 
-pub fn read_channel_2_addresses(cpu: &mut Cpu) -> (u8, u8, u8, u8) {
-    (read_address(0xFF16, cpu),
-     read_address(0xFF17, cpu),
-     read_address(0xFF18, cpu),
-     read_address(0xFF19, cpu))
+pub fn read_channel_2_addresses(cpu: &mut Cpu) -> (u8, u8, u8) {
+    (cpu.memory[0xFF16], cpu.memory[0xFF18], cpu.memory[0xFF19])
 }
 
-pub fn read_channel_3_addresses(cpu: &mut Cpu) -> (u8, u8, u8, u8, u8) {
+pub fn read_channel_3_addresses(cpu: &mut Cpu) -> (u8, u8, u8, u8) {
     (read_address(0xFF1A, cpu),
-     read_address(0xFF1B, cpu),
      read_address(0xFF1C, cpu),
      read_address(0xFF1D, cpu),
      read_address(0xFF1E, cpu))
@@ -552,6 +589,8 @@ pub fn read_bank_address(address: usize, cpu: &mut Cpu) -> u8 {
     if cpu.mbc_1 {
         let bank = get_selected_rom_bank(cpu);
         cpu.cart_rom[address + 0x4000 * (bank - 1)]
+    } else if cpu.mbc_3 {
+        cpu.cart_rom[address + 0x4000 * (cpu.mbc_3_rom_bank - 1)]
     } else {
         cpu.cart_rom[address]
     }

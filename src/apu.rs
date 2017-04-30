@@ -6,6 +6,7 @@ pub struct WaveChannel {
     pub counter: u16,
     pub enabled: bool,
     pub freq_pos: u32,
+    pub wave_pos: usize,
     pub volume: u8,
 }
 
@@ -14,7 +15,7 @@ pub struct SquareChannel {
     pub envelope_pos: u8,
     pub envelope_period: u8,
     pub incr_vol: bool,
-    pub wave_pos: u8,
+    pub wave_pos: usize,
     pub duty_table: [u8; 32],
 }
 
@@ -152,6 +153,7 @@ impl Default for WaveChannel {
             counter: 0,
             enabled: false,
             freq_pos: 0,
+            wave_pos: 0,
             volume: 0,
         }
     }
@@ -196,28 +198,46 @@ impl Apu {
 
 pub fn gen_samples(sample_len: u8, cpu: &mut Cpu) {
     let mut result = vec![0; sample_len as usize];
+    let nr51 = cpu.memory[0xFF25];
     if *cpu.apu.channel_1.enabled() {
-        mix_channel_1(&mut result, cpu);
+        let registers = read_channel_1_addresses(cpu);
+        let mut channel = &mut cpu.apu.channel_1;
+        let sound = ((nr51 >> 4) & 1, nr51 & 1);
+        mix_channel_square(&mut result, channel, registers, sound);
     }
     if *cpu.apu.channel_2.enabled() {
-        mix_channel_2(&mut result, cpu);
+        let registers = read_channel_2_addresses(cpu);
+        let mut channel = &mut cpu.apu.channel_2;
+        let sound = ((nr51 >> 5) & 1, (nr51 >> 1) & 1);
+        mix_channel_square(&mut result, channel, registers, sound);
     }
     if cpu.apu.channel_3.enabled {
-        mix_channel_3(&mut result, cpu);
+        let channel_3_registers = read_channel_3_addresses(cpu);
+        let wave_table = &cpu.memory[0xFF30..(0xFF30 + 16)];
+        let mut channel_3 = &mut cpu.apu.channel_3;
+        let sound = ((nr51 >> 6) & 1, (nr51 >> 2) & 1);
+        mix_channel_3(&mut result,
+                      &mut channel_3,
+                      wave_table,
+                      channel_3_registers,
+                      sound);
     }
     if *cpu.apu.channel_4.enabled() {
-        mix_channel_4(&mut result, cpu);
+        let channel_4_registers = cpu.memory[0xFF22];
+        let mut channel_4 = &mut cpu.apu.channel_4;
+        mix_channel_4(&mut result, &mut channel_4, channel_4_registers, nr51);
     }
     cpu.apu.audio_vec_queue.append(&mut result);
 }
 
 pub fn queue(cpu: &mut Cpu) {
     if cpu.apu.audio_queue.size() == 0 {
-        println!("Empty queue");
+        //    println!("Empty queue");
     }
 
     // This is the maximum the queue can be delayed by
     cpu.apu.audio_queue.queue(&cpu.apu.audio_vec_queue);
+
     cpu.apu.audio_vec_queue.clear();
     cpu.apu.prev_size = cpu.apu.audio_queue.size() as i32;
 }
@@ -243,98 +263,55 @@ pub fn step_length(cpu: &mut Cpu) {
 }
 
 #[allow(non_snake_case)]
-pub fn mix_channel_1(result: &mut Vec<i16>, cpu: &mut Cpu) {
-    let (_NR10, NR11, _NR12, NR13, NR14) = read_channel_1_addresses(cpu);
-    let nr51 = read_address(0xFF25, cpu);
-    let left_out = (nr51 >> 4) & 1;
-    let right_out = nr51 & 1;
-    let time_freq = (NR14 as u16 & 0b111) << 8 | NR13 as u16;
-    let duty = (NR11 >> 6) as usize;
+pub fn mix_channel_square(result: &mut Vec<i16>,
+                          channel: &mut SquareChannel,
+                          (duty_reg, freq_lo, freq_hi): (u8, u8, u8),
+                          (left_out, right_out): (u8, u8)) {
+    let time_freq = (freq_hi as u16 & 0b111) << 8 | freq_lo as u16;
+    let duty = (duty_reg >> 6) as usize;
     let not_time_freq = 4 * (2048 - time_freq as u32);
-    let init_volume = *cpu.apu.channel_1.volume() as i16;
-    let volume_step = match left_out + right_out {
-        2 => (1 << 9),
-        1 => (1 << 8),
+    let init_volume = *channel.volume() as i16;
+    let volume = match left_out + right_out {
+        2 => (1 << 9) * init_volume,
+        1 => (1 << 8) * init_volume,
         0 => 0,
         _ => unreachable!(),
-    } as i16;
-    let volume = volume_step * init_volume;
-    let duty_table = cpu.apu.channel_1.duty_table;
+    };
+    let init_freq = *channel.freq_pos();
+    let init_wave = channel.wave_pos;
     let duty_start = duty * 8;
-    if not_time_freq as u32 != 0 {
-        let downsample = 1 + 8192 / result.len();
-        let mut freq = *cpu.apu.channel_1.freq_pos();
-        for x in 0..8192 {
-            // cycles
-            if freq == 0 {
-                freq = not_time_freq;
-                cpu.apu.channel_1.wave_pos += 1;
-                cpu.apu.channel_1.wave_pos %= 8;
-                // reload
-            }
-            freq -= 1;
-            let sample = cond!(duty_table[duty_start + cpu.apu.channel_1.wave_pos as usize] == 0,
-                               -volume,
-                               volume);
-            let sample_idx = x / downsample;
-            if volume != 0 && x % downsample == 0 {
-                result[sample_idx] += sample;
-            }
+    let duty_table = &channel.duty_table[duty_start..];
+    let downsample = 1 + 8192 / result.len();
+    let volume_on = volume != 0;
+    if volume_on {
+        for x in 0..result.len() {
+            let est_wave_pos = cond!(init_freq as usize > not_time_freq as usize + x * downsample,
+                      init_wave,
+                      (init_wave +
+                       ((x * downsample + not_time_freq as usize - init_freq as usize) /
+                        not_time_freq as usize) as usize) % 8);
+            let duty_low = duty_table[est_wave_pos] == 0;
+            let sample = cond!(duty_low, -volume, volume);
+            result[x] += sample;
         }
-        *cpu.apu.channel_1.freq_pos() = freq;
     }
+    channel.wave_pos = cond!(init_freq as usize > not_time_freq as usize + 8191,
+                             init_wave,
+                             (init_wave +
+                              ((8191 + not_time_freq as usize - init_freq as usize) /
+                               not_time_freq as usize) as usize) % 8);
+    channel.wave_channel.freq_pos = cond!(init_freq < 8192,
+                                          (not_time_freq - (8192 - init_freq) % not_time_freq) % not_time_freq,
+                                          init_freq - 8192);
 }
 
 #[allow(non_snake_case)]
-pub fn mix_channel_2(result: &mut Vec<i16>, cpu: &mut Cpu) {
-    let (NR21, _NR22, NR23, NR24) = read_channel_2_addresses(cpu);
-    let nr51 = read_address(0xFF25, cpu);
-    let left_out = (nr51 >> 5) & 1;
-    let right_out = (nr51 >> 1) & 1;
-    let time_freq = (NR24 as u16 & 0b111) << 8 | NR23 as u16;
-    let duty = (NR21 >> 6) as usize;
-    let not_time_freq = 4 * (2048 - time_freq as u32);
-    let init_volume = *cpu.apu.channel_2.volume() as i16;
-    let volume_step = match left_out + right_out {
-        2 => (1 << 9),
-        1 => (1 << 8),
-        0 => 0,
-        _ => unreachable!(),
-    } as i16;
-    let volume = volume_step * init_volume;
-    let duty_table = cpu.apu.channel_1.duty_table;
-    let duty_start = duty * 8;
-    if not_time_freq as u32 != 0 {
-        let downsample = 1 + 8192 / result.len();
-        let mut freq = *cpu.apu.channel_2.freq_pos();
-        for x in 0..8192 {
-            // cycles
-            if freq == 0 {
-                freq = not_time_freq;
-                cpu.apu.channel_2.wave_pos += 1;
-                cpu.apu.channel_2.wave_pos %= 8;
-                // reload
-            }
-            freq -= 1;
-            let sample = cond!(duty_table[duty_start + cpu.apu.channel_2.wave_pos as usize] == 0,
-                               -volume,
-                               volume);
-            let sample_idx = x / downsample;
-            if volume != 0 && x % downsample == 0 {
-                result[sample_idx] += sample;
-            }
-        }
-        *cpu.apu.channel_2.freq_pos() = freq;
-    }
-}
-
-
-#[allow(non_snake_case)]
-pub fn mix_channel_3(result: &mut Vec<i16>, cpu: &mut Cpu) {
-    let (NR30, _, NR32, NR33, NR34) = read_channel_3_addresses(cpu);
-    let nr51 = read_address(0xFF25, cpu);
-    let right_out = (nr51 >> 2) & 1;
-    let left_out = (nr51 >> 6) & 1;
+pub fn mix_channel_3(result: &mut Vec<i16>,
+                     channel: &mut WaveChannel,
+                     wave_table: &[u8],
+                     registers: (u8, u8, u8, u8),
+                     (left_out, right_out): (u8, u8)) {
+    let (NR30, NR32, NR33, NR34) = registers;
     let time_freq = ((NR34 as u16 & 0b111) << 8) | NR33 as u16;
     let not_time_freq = 2 * (2048 - time_freq as u32);
     let volume_step = match left_out + right_out {
@@ -343,75 +320,81 @@ pub fn mix_channel_3(result: &mut Vec<i16>, cpu: &mut Cpu) {
         0 => 0,
         _ => unreachable!(),
     } as i16;
-    let volume_shift = ((NR32 & 0x60) >> 4) as i16;
-    if (NR30 & 0x80) != 0 && not_time_freq as u32 != 0 {
+    let volume_shift = ((NR32 & 0x60) >> 5) as i16;
+    if (NR30 & 0x80) != 0 {
         let downsample = 1 + 8192 / result.len();
-        let mut freq = cpu.apu.channel_3_pos;
-        for x in 0..8192 {
-            // cycles
-            if freq == 0 {
-                freq = not_time_freq;
-                cpu.apu.channel_3_wave_pos += 1;
-                cpu.apu.channel_3_wave_pos %= 32;
-                // reload
-            }
-            freq -= 1;
-            let sample_cell = read_address(0xFF30 + (cpu.apu.channel_3_wave_pos as usize) / 2, cpu);
-            let sample = cond!(cpu.apu.channel_3_wave_pos % 2 == 0,
-                               sample_cell >> 4,
-                               sample_cell & 0x0F);
-            let sample_idx = x / downsample;
-            if volume_shift != 0 && x % downsample == 0 {
-                result[sample_idx] += (volume_step * (2 * sample as i16 - 15)) /
-                                      (1 << (volume_shift - 1));
+        let init_freq = channel.freq_pos;
+        let init_wave = channel.wave_pos;
+        for x in 0..result.len() {
+            if volume_shift != 0 {
+                let est_wave_pos =
+                    cond!(init_freq as usize > not_time_freq as usize + x * downsample,
+                          init_wave,
+                          (init_wave +
+                           ((x * downsample + not_time_freq as usize - init_freq as usize) /
+                            not_time_freq as usize) as usize) % 32);
+                let sample_cell = wave_table[est_wave_pos as usize / 2];
+                let sample_is_left = est_wave_pos & 1 == 0;
+                let sample = cond!(sample_is_left, sample_cell >> 4, sample_cell & 0x0F);
+                result[x] += (volume_step * (2 * sample as i16 - 15)) / (1 << (volume_shift - 1));
             }
         }
-        cpu.apu.channel_3_pos = freq;
+
+        channel.wave_pos = cond!(init_freq as usize > not_time_freq as usize + 8191,
+                      init_wave,
+                      (init_wave +
+                       ((8191 + not_time_freq as usize - init_freq as usize) /
+                        not_time_freq as usize) as usize) % 32);
+        channel.freq_pos = cond!(init_freq < 8192,
+                                 (not_time_freq - (8192 - init_freq) % not_time_freq) %
+                                 not_time_freq,
+                                 init_freq - 8192);
     }
 }
 
 #[allow(non_snake_case)]
-pub fn mix_channel_4(result: &mut Vec<i16>, cpu: &mut Cpu) {
-    let (_, _NR42, NR43, _) = read_channel_4_addresses(cpu);
-    let nr51 = read_address(0xFF25, cpu);
+pub fn mix_channel_4(result: &mut Vec<i16>, channel: &mut NoiseChannel, nr43: u8, nr51: u8) {
     let right_out = (nr51 >> 3) & 1;
     let left_out = (nr51 >> 7) & 1;
     let divisors = [8, 16, 32, 48, 64, 80, 96, 112];
-    let dividing_ratio = divisors[(NR43 & 0x7) as usize];
-    let shift_clock_freq = NR43 >> 4 as u32;
+    let dividing_ratio = divisors[(nr43 & 0x7) as usize];
+    let shift_clock_freq = nr43 >> 4 as u32;
     let timer_freq = dividing_ratio << shift_clock_freq;
-    let volume_step = (1 << 9) as i16;
-    let volume_init = *cpu.apu.channel_4.volume() as i16;
-    let volume = match left_out + right_out {
-        2 => volume_step * volume_init,
-        1 => volume_step * volume_init / 2,
+    let volume_step = match left_out + right_out {
+        2 => (1 << 9),
+        1 => (1 << 8),
         0 => 0,
         _ => unreachable!(),
-    };
-    let half_width = NR43 & 0x08 != 0; // whether the shift register is 15bits of 7 bits
-    if shift_clock_freq < 15 && timer_freq as u32 != 0 {
+    } as i16;
+    let volume_init = *channel.volume() as i16;
+    let volume = volume_step * volume_init;
+    let half_width = nr43 & 0x08 != 0; // whether the shift register is 15bits of 7 bits
+    if shift_clock_freq < 14 && timer_freq as u32 != 0 {
         let downsample = 1 + 8192 / result.len();
-        let mut freq = *cpu.apu.channel_4.freq_pos();
+        let mut freq = *channel.freq_pos();
+        let mut sample_idx = 0;
         for x in 0..8192 {
             // cycles
             if freq == 0 {
                 freq = timer_freq;
-                let lfsr = cpu.apu.channel_4.lfsr;
-                let new_bit = (lfsr ^ (lfsr >> 1)) & 1;
+                let lfsr = channel.lfsr;
+                // Even though the documentation says that it should use the lower two bits, this sounds more accurate :/
+                let tap_shift = cond!(half_width, 0, 0);
+                let new_bit = ((lfsr ^ (lfsr >> 1)) >> tap_shift) & 1;
                 let part_res = (new_bit << 14) | (lfsr >> 1);
-                cpu.apu.channel_4.lfsr = if half_width {
+                channel.lfsr = if half_width {
                     (part_res & (0x7FFF - 0x0040)) | (new_bit << 6)
                 } else {
                     part_res
                 };
             }
             freq -= 1;
-            let sample_idx = x / downsample;
             if volume != 0 && x % downsample == 0 {
-                result[sample_idx] += cond!((cpu.apu.channel_4.lfsr & 1) == 0, volume, -volume);
+                result[sample_idx] += cond!((channel.lfsr & 1) == 0, volume, -volume);
+                sample_idx += 1;
             }
         }
-        *cpu.apu.channel_4.freq_pos() = freq;
+        *channel.freq_pos() = freq;
     }
 }
 
