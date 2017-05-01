@@ -11,26 +11,92 @@ pub struct WaveChannel {
 }
 
 pub struct SquareChannel {
-    pub counter: u16,
-    pub enabled: bool,
+    pub wave_channel: WaveChannel,
     pub envelope_pos: u8,
     pub envelope_period: u8,
-    pub freq_pos: u32,
     pub incr_vol: bool,
-    pub volume: u8,
     pub wave_pos: usize,
     pub duty_table: [u8; 32],
 }
 
 pub struct NoiseChannel {
-    pub counter: u16,
-    pub enabled: bool,
+    pub wave_channel: WaveChannel,
     pub envelope_pos: u8,
-    pub volume: u8,
     pub lfsr: u16,
-    pub freq_pos: u32,
     pub incr_vol: bool,
     pub envelope_period: u8,
+}
+
+pub trait HasWaveChannel {
+    fn wave_channel(&mut self) -> &mut WaveChannel;
+
+    fn counter(&mut self) -> &mut u16 {
+        &mut self.wave_channel().counter
+    }
+
+    fn enabled(&mut self) -> &mut bool {
+        &mut self.wave_channel().enabled
+    }
+
+    fn freq_pos(&mut self) -> &mut u32 {
+        &mut self.wave_channel().freq_pos
+    }
+
+    fn volume(&mut self) -> &mut u8 {
+        &mut self.wave_channel().volume
+    }
+}
+
+impl HasWaveChannel for WaveChannel {
+    fn wave_channel(&mut self) -> &mut WaveChannel {
+        self
+    }
+}
+
+impl HasWaveChannel for SquareChannel {
+    fn wave_channel(&mut self) -> &mut WaveChannel {
+        &mut self.wave_channel
+    }
+}
+
+impl HasWaveChannel for NoiseChannel {
+    fn wave_channel(&mut self) -> &mut WaveChannel {
+        &mut self.wave_channel
+    }
+}
+
+trait HasEnvelope {
+    fn envelope_pos(&mut self) -> &mut u8;
+    fn envelope_period(&mut self) -> &mut u8;
+    fn incr_vol(&mut self) -> &mut bool;
+}
+
+impl HasEnvelope for SquareChannel {
+    fn envelope_pos(&mut self) -> &mut u8 {
+        &mut self.envelope_pos
+    }
+
+    fn envelope_period(&mut self) -> &mut u8 {
+        &mut self.envelope_period
+    }
+
+    fn incr_vol(&mut self) -> &mut bool {
+        &mut self.incr_vol
+    }
+}
+
+impl HasEnvelope for NoiseChannel {
+    fn envelope_pos(&mut self) -> &mut u8 {
+        &mut self.envelope_pos
+    }
+
+    fn envelope_period(&mut self) -> &mut u8 {
+        &mut self.envelope_period
+    }
+
+    fn incr_vol(&mut self) -> &mut bool {
+        &mut self.incr_vol
+    }
 }
 
 pub struct Apu {
@@ -60,11 +126,8 @@ pub struct Apu {
 impl Default for NoiseChannel {
     fn default() -> NoiseChannel {
         NoiseChannel {
-            counter: 0,
-            enabled: false,
+            wave_channel: Default::default(),
             envelope_pos: 0,
-            volume: 0,
-            freq_pos: 0,
             lfsr: 0x7FFF,
             incr_vol: false,
             envelope_period: 0,
@@ -75,11 +138,8 @@ impl Default for NoiseChannel {
 impl Default for SquareChannel {
     fn default() -> SquareChannel {
         SquareChannel {
-            counter: 0,
-            enabled: false,
+            wave_channel: Default::default(),
             envelope_pos: 0,
-            freq_pos: 0,
-            volume: 0,
             incr_vol: false,
             envelope_period: 0,
             wave_pos: 0,
@@ -139,13 +199,13 @@ impl Apu {
 pub fn gen_samples(sample_len: u8, cpu: &mut Cpu) {
     let mut result = vec![0; sample_len as usize];
     let nr51 = cpu.memory[0xFF25];
-    if cpu.apu.channel_1.enabled {
+    if *cpu.apu.channel_1.enabled() {
         let registers = read_channel_1_addresses(cpu);
         let mut channel = &mut cpu.apu.channel_1;
         let sound = ((nr51 >> 4) & 1, nr51 & 1);
         mix_channel_square(&mut result, channel, registers, sound);
     }
-    if cpu.apu.channel_2.enabled {
+    if *cpu.apu.channel_2.enabled() {
         let registers = read_channel_2_addresses(cpu);
         let mut channel = &mut cpu.apu.channel_2;
         let sound = ((nr51 >> 5) & 1, (nr51 >> 1) & 1);
@@ -162,7 +222,7 @@ pub fn gen_samples(sample_len: u8, cpu: &mut Cpu) {
                       channel_3_registers,
                       sound);
     }
-    if cpu.apu.channel_4.enabled {
+    if *cpu.apu.channel_4.enabled() {
         let channel_4_registers = cpu.memory[0xFF22];
         let mut channel_4 = &mut cpu.apu.channel_4;
         mix_channel_4(&mut result, &mut channel_4, channel_4_registers, nr51);
@@ -187,32 +247,19 @@ pub fn step_length(cpu: &mut Cpu) {
     let channel_2_length_enable = read_address(0xFF19, cpu) & 0x40 != 0;
     let channel_3_length_enable = read_address(0xFF1E, cpu) & 0x40 != 0;
     let channel_4_length_enable = read_address(0xFF23, cpu) & 0x40 != 0;
-    if cpu.apu.channel_1.enabled && channel_1_length_enable {
-        if cpu.apu.channel_1.counter == 0 {
-            cpu.apu.channel_1.enabled = false;
-        }
-        cpu.apu.channel_1.counter -= 1;
-    }
-    if cpu.apu.channel_2.enabled && channel_2_length_enable {
-        if cpu.apu.channel_2.counter == 0 {
-            cpu.apu.channel_2.enabled = false;
-        }
-        cpu.apu.channel_2.counter -= 1;
-    }
 
-    if cpu.apu.channel_3.enabled && channel_3_length_enable {
-        if cpu.apu.channel_3.counter == 0 {
-            cpu.apu.channel_3.enabled = false;
+    fn go(channel: &mut WaveChannel, length_enable: bool) {
+        if channel.enabled && length_enable {
+            if channel.counter == 0 {
+                channel.enabled = false;
+            }
+            channel.counter -= 1;
         }
-        cpu.apu.channel_3.counter -= 1;
     }
-
-    if cpu.apu.channel_4.enabled && channel_4_length_enable {
-        if cpu.apu.channel_4.counter == 0 {
-            cpu.apu.channel_4.enabled = false;
-        }
-        cpu.apu.channel_4.counter -= 1;
-    }
+    go(&mut cpu.apu.channel_1.wave_channel, channel_1_length_enable);
+    go(&mut cpu.apu.channel_2.wave_channel, channel_2_length_enable);
+    go(&mut cpu.apu.channel_3, channel_3_length_enable);
+    go(&mut cpu.apu.channel_4.wave_channel, channel_4_length_enable);
 }
 
 #[allow(non_snake_case)]
@@ -223,18 +270,18 @@ pub fn mix_channel_square(result: &mut Vec<i16>,
     let time_freq = (freq_hi as u16 & 0b111) << 8 | freq_lo as u16;
     let duty = (duty_reg >> 6) as usize;
     let not_time_freq = 4 * (2048 - time_freq as u32);
-    let init_volume = channel.volume as i16;
+    let init_volume = *channel.volume() as i16;
     let volume = match left_out + right_out {
         2 => (1 << 9) * init_volume,
         1 => (1 << 8) * init_volume,
         0 => 0,
         _ => unreachable!(),
     };
+    let init_freq = *channel.freq_pos();
+    let init_wave = channel.wave_pos;
     let duty_start = duty * 8;
     let duty_table = &channel.duty_table[duty_start..];
     let downsample = 1 + 8192 / result.len();
-    let init_freq = channel.freq_pos;
-    let init_wave = channel.wave_pos;
     let volume_on = volume != 0;
     if volume_on {
         for x in 0..result.len() {
@@ -253,9 +300,9 @@ pub fn mix_channel_square(result: &mut Vec<i16>,
                              (init_wave +
                               ((8191 + not_time_freq as usize - init_freq as usize) /
                                not_time_freq as usize) as usize) % 8);
-    channel.freq_pos = cond!(init_freq < 8192,
-                             (not_time_freq - (8192 - init_freq) % not_time_freq) % not_time_freq,
-                             init_freq - 8192);
+    channel.wave_channel.freq_pos = cond!(init_freq < 8192,
+                                          (not_time_freq - (8192 - init_freq) % not_time_freq) % not_time_freq,
+                                          init_freq - 8192);
 }
 
 #[allow(non_snake_case)]
@@ -319,12 +366,12 @@ pub fn mix_channel_4(result: &mut Vec<i16>, channel: &mut NoiseChannel, nr43: u8
         0 => 0,
         _ => unreachable!(),
     } as i16;
-    let volume_init = channel.volume as i16;
+    let volume_init = *channel.volume() as i16;
     let volume = volume_step * volume_init;
     let half_width = nr43 & 0x08 != 0; // whether the shift register is 15bits of 7 bits
     if shift_clock_freq < 14 && timer_freq as u32 != 0 {
         let downsample = 1 + 8192 / result.len();
-        let mut freq = channel.freq_pos;
+        let mut freq = *channel.freq_pos();
         let mut sample_idx = 0;
         for x in 0..8192 {
             // cycles
@@ -347,7 +394,7 @@ pub fn mix_channel_4(result: &mut Vec<i16>, channel: &mut NoiseChannel, nr43: u8
                 sample_idx += 1;
             }
         }
-        channel.freq_pos = freq;
+        *channel.freq_pos() = freq;
     }
 }
 
@@ -368,7 +415,7 @@ pub fn step_sweep(cpu: &mut Cpu) {
                 // check again
                 let sweep_check = cpu.apu.freq_sweep(shift, negate);
                 if sweep_check > 2047 {
-                    cpu.apu.channel_1.enabled = false;
+                    *cpu.apu.channel_1.enabled() = false;
                 }
             }
         } else {
@@ -378,57 +425,28 @@ pub fn step_sweep(cpu: &mut Cpu) {
 }
 
 pub fn step_envelope(cpu: &mut Cpu) {
-    if cpu.apu.channel_1.enabled && cpu.apu.channel_1.envelope_period != 0 {
-        if cpu.apu.channel_1.incr_vol && cpu.apu.channel_1.volume < 15 {
-            if cpu.apu.channel_1.envelope_pos == 0 {
-                cpu.apu.channel_1.volume += 1;
-                cpu.apu.channel_1.envelope_pos = cpu.apu.channel_1.envelope_period;
-            } else {
-                cpu.apu.channel_1.envelope_pos -= 1;
-            }
-        } else if !cpu.apu.channel_1.incr_vol && cpu.apu.channel_1.volume > 0 {
-            if cpu.apu.channel_1.envelope_pos == 0 {
-                cpu.apu.channel_1.volume -= 1;
-                cpu.apu.channel_1.envelope_pos = cpu.apu.channel_1.envelope_period;
-            } else {
-                cpu.apu.channel_1.envelope_pos -= 1;
-            }
-        }
-    }
-    if cpu.apu.channel_2.enabled && cpu.apu.channel_2.envelope_period != 0 {
-        if cpu.apu.channel_2.incr_vol && cpu.apu.channel_2.volume < 15 {
-            if cpu.apu.channel_2.envelope_pos == 0 {
-                cpu.apu.channel_2.volume += 1;
-                cpu.apu.channel_2.envelope_pos = cpu.apu.channel_2.envelope_period;
-            } else {
-                cpu.apu.channel_2.envelope_pos -= 1;
-            }
-        } else if !cpu.apu.channel_2.incr_vol && cpu.apu.channel_2.volume > 0 {
-            if cpu.apu.channel_2.envelope_pos == 0 {
-                cpu.apu.channel_2.volume -= 1;
-                cpu.apu.channel_2.envelope_pos = cpu.apu.channel_2.envelope_period;
-            } else {
-                cpu.apu.channel_2.envelope_pos -= 1;
+    fn go<T: HasWaveChannel + HasEnvelope>(channel: &mut T) {
+        if *channel.enabled() && *channel.envelope_period() != 0 {
+            if *channel.incr_vol() && *channel.volume() < 15 {
+                if *channel.envelope_pos() == 0 {
+                    *channel.volume() += 1;
+                    *channel.envelope_pos() = *channel.envelope_period();
+                } else {
+                    *channel.envelope_pos() -= 1;
+                }
+            } else if !*channel.incr_vol() && *channel.volume() > 0 {
+                if *channel.envelope_pos() == 0 {
+                    *channel.volume() -= 1;
+                    *channel.envelope_pos() = *channel.envelope_period();
+                } else {
+                    *channel.envelope_pos() -= 1;
+                }
             }
         }
     }
-    if cpu.apu.channel_4.enabled && cpu.apu.channel_4.envelope_period != 0 {
-        if cpu.apu.channel_4.incr_vol && cpu.apu.channel_4.volume < 15 {
-            if cpu.apu.channel_4.envelope_pos == 0 {
-                cpu.apu.channel_4.volume += 1;
-                cpu.apu.channel_4.envelope_pos = cpu.apu.channel_4.envelope_period;
-            } else {
-                cpu.apu.channel_4.envelope_pos -= 1;
-            }
-        } else if !cpu.apu.channel_4.incr_vol && cpu.apu.channel_4.volume > 0 {
-            if cpu.apu.channel_4.envelope_pos == 0 {
-                cpu.apu.channel_4.volume -= 1;
-                cpu.apu.channel_4.envelope_pos = cpu.apu.channel_4.envelope_period;
-            } else {
-                cpu.apu.channel_4.envelope_pos -= 1;
-            }
-        }
-    }
+    go(&mut cpu.apu.channel_1);
+    go(&mut cpu.apu.channel_2);
+    go(&mut cpu.apu.channel_4);
 }
 
 pub fn step(cpu: &mut Cpu) {
