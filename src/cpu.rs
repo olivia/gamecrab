@@ -1,12 +1,12 @@
 extern crate nfd;
-use std::fs::File;
-use std::io::prelude::*;
+use self::nfd::Response;
+use apu::*;
 use interrupt::*;
 use lcd::*;
-use apu::*;
 use register::*;
+use std::fs::File;
+use std::io::prelude::*;
 use std::path::Path;
-use self::nfd::Response;
 
 pub struct Cpu {
     pub a: u8,
@@ -196,7 +196,7 @@ pub fn write_nx4_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                 let nr12 = read_address(0xFF12, cpu);
                 let nr13 = read_address(0xFF13, cpu);
                 let nr14 = read_address(0xFF14, cpu);
-                let time_freq = (nr14 as u16 & 0b111) << 8 | nr13 as u16;
+                let time_freq = (nr14 as u32 & 7) << 8 | nr13 as u32;
                 let not_time_freq = 4 * (2048 - time_freq as u32);
                 cpu.apu.channel_1.enabled = true;
                 if cpu.apu.channel_1.counter == 0 {
@@ -215,13 +215,12 @@ pub fn write_nx4_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                 if cpu.apu.sweeping && cpu.apu.freq_sweep(shift, cpu.apu.sweep_negate) > 2047 {
                     cpu.apu.channel_1.enabled = false;
                 }
-
             }
             0xFF19 => {
                 let nr22 = read_address(0xFF17, cpu);
                 let nr23 = read_address(0xFF18, cpu);
                 let nr24 = read_address(0xFF19, cpu);
-                let time_freq = (nr24 as u16 & 0b111) << 8 | nr23 as u16;
+                let time_freq = (nr24 as u32 & 0b111) << 8 | nr23 as u32;
                 let not_time_freq = 4 * (2048 - time_freq as u32);
                 cpu.apu.channel_2.enabled = true;
                 if cpu.apu.channel_2.counter == 0 {
@@ -231,7 +230,6 @@ pub fn write_nx4_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                 cpu.apu.channel_2.freq_pos = not_time_freq;
                 cpu.apu.channel_2.volume = (nr22 & 0xF0) >> 4;
                 cpu.apu.channel_2.enabled = nr22 & 0xF8 != 0;
-                //        println!("Wrote {:4>0X} to NR24", val);
             }
             0xFF1E => {
                 cpu.apu.channel_3.enabled = true;
@@ -240,11 +238,10 @@ pub fn write_nx4_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                 }
                 cpu.apu.channel_3_wave_pos = 0;
                 let nr32 = read_address(0xFF1C, cpu);
-                cpu.apu.channel_3_pos = 2 *
-                                        (2048 -
-                                         (read_address(0xFF1D, cpu) as u32 |
-                                          (read_address(0xFF1E, cpu) as u32) << 8) &
-                                         0x7F);
+                let nr33 = read_address(0xFF1D, cpu) as u32;
+                let nr34 = read_address(0xFF1E, cpu) as u32;
+                let time_freq = (nr34 & 7) << 8 | nr33;
+                cpu.apu.channel_3_pos = 2 * (2048 - time_freq);
                 cpu.apu.channel_3.volume = (nr32 & 0x60) >> 5;
                 cpu.apu.channel_3.enabled = (read_address(0xFF1A, cpu) & 0x80) != 0;
             }
@@ -273,22 +270,22 @@ pub fn write_nx4_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
 }
 
 pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
-    let safe_to_write = cpu.dma_transfer_cycles_left <= 0 &&
-                        match address {
-        0x0000...0x1FFF => false, // used for enabling ram bank
-        0x2000...0x3FFF => false, //ROM bank number
-        0x4000...0x5FFF => false, //RAM bank number or high bits of rom bank number
-        0x6000...0x7FFF => false, //ROM/RAM select
-        0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
-        0xA000...0xBFFF => cpu.ram_enabled, 
-        0xFE00...0xFE9F => {
-            // OAM
-            !LCDC::Power.is_set(cpu) ||
-            (ScreenMode::HBlank.is_set(cpu) || ScreenMode::VBlank.is_set(cpu))
-        } 
-        0xFEA0...0xFEFF => false, //Unused memory
-        _ => true,
-    };
+    let safe_to_write = cpu.dma_transfer_cycles_left <= 0
+        && match address {
+            0x0000...0x1FFF => false, // used for enabling ram bank
+            0x2000...0x3FFF => false, //ROM bank number
+            0x4000...0x5FFF => false, //RAM bank number or high bits of rom bank number
+            0x6000...0x7FFF => false, //ROM/RAM select
+            0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
+            0xA000...0xBFFF => cpu.ram_enabled,
+            0xFE00...0xFE9F => {
+                // OAM
+                !LCDC::Power.is_set(cpu)
+                    || (ScreenMode::HBlank.is_set(cpu) || ScreenMode::VBlank.is_set(cpu))
+            }
+            0xFEA0...0xFEFF => false, //Unused memory
+            _ => true,
+        };
     if safe_to_write {
         match address {
             0xA000...0xBFFF => write_ram_address(address, val, cpu),
@@ -432,7 +429,7 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
 fn select_mbc_3_rom_bank(bank: u8, cpu: &mut Cpu) {
     cpu.mbc_3_rom_bank = match bank {
         0 => 1,
-        _ => bank as usize & 0x7F, // Select 7 bits 
+        _ => bank as usize & 0x7F, // Select 7 bits
     };
 }
 
@@ -475,20 +472,20 @@ fn dma_transfer(val: u8, cpu: &mut Cpu) {
 }
 
 pub fn safe_read_address(address: usize, cpu: &mut Cpu) -> u8 {
-    let safe_to_read = cpu.dma_transfer_cycles_left <= 0 &&
-                       match address {
-        0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
-        0xFEA0...0xFEFF => false,
-        0xFE00...0xFE9F => {
-            !LCDC::Power.is_set(cpu) ||
-            (ScreenMode::HBlank.is_set(cpu) || ScreenMode::VBlank.is_set(cpu))
-        } 
-        _ => true,
-    };
+    let safe_to_read = cpu.dma_transfer_cycles_left <= 0
+        && match address {
+            0x8000...0x9FFF => !LCDC::Power.is_set(cpu) || !ScreenMode::Transferring.is_set(cpu),
+            0xFEA0...0xFEFF => false,
+            0xFE00...0xFE9F => {
+                !LCDC::Power.is_set(cpu)
+                    || (ScreenMode::HBlank.is_set(cpu) || ScreenMode::VBlank.is_set(cpu))
+            }
+            _ => true,
+        };
     if safe_to_read {
         match address {
             0xE000...0xFDFF => read_address(address - 0x2000, cpu),
-            0xFF41 => read_stat_address(cpu), 
+            0xFF41 => read_stat_address(cpu),
             0xFF00 => read_joypad(cpu),
             0xFF01 => 0xFF, // Serial Data should return 0xFF if no game boy is connect to the cable
             0xFF02 => read_address(address, cpu),
@@ -522,17 +519,21 @@ pub fn read_channel_2_addresses(cpu: &mut Cpu) -> (u8, u8, u8) {
 }
 
 pub fn read_channel_3_addresses(cpu: &mut Cpu) -> (u8, u8, u8, u8) {
-    (read_address(0xFF1A, cpu),
-     read_address(0xFF1C, cpu),
-     read_address(0xFF1D, cpu),
-     read_address(0xFF1E, cpu))
+    (
+        read_address(0xFF1A, cpu),
+        read_address(0xFF1C, cpu),
+        read_address(0xFF1D, cpu),
+        read_address(0xFF1E, cpu),
+    )
 }
 
 pub fn read_channel_4_addresses(cpu: &mut Cpu) -> (u8, u8, u8, u8) {
-    (read_address(0xFF20, cpu),
-     read_address(0xFF21, cpu),
-     read_address(0xFF22, cpu),
-     read_address(0xFF23, cpu))
+    (
+        read_address(0xFF20, cpu),
+        read_address(0xFF21, cpu),
+        read_address(0xFF22, cpu),
+        read_address(0xFF23, cpu),
+    )
 }
 
 pub fn read_address_i8(address: usize, cpu: &mut Cpu) -> i8 {

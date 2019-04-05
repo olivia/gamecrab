@@ -156,11 +156,13 @@ pub fn gen_samples(sample_len: u8, cpu: &mut Cpu) {
         let wave_table = &cpu.memory[0xFF30..(0xFF30 + 16)];
         let mut channel_3 = &mut cpu.apu.channel_3;
         let sound = ((nr51 >> 6) & 1, (nr51 >> 2) & 1);
-        mix_channel_3(&mut result,
-                      &mut channel_3,
-                      wave_table,
-                      channel_3_registers,
-                      sound);
+        mix_channel_3(
+            &mut result,
+            &mut channel_3,
+            wave_table,
+            channel_3_registers,
+            sound,
+        );
     }
     if cpu.apu.channel_4.enabled {
         let channel_4_registers = cpu.memory[0xFF22];
@@ -190,36 +192,42 @@ pub fn step_length(cpu: &mut Cpu) {
     if cpu.apu.channel_1.enabled && channel_1_length_enable {
         if cpu.apu.channel_1.counter == 0 {
             cpu.apu.channel_1.enabled = false;
+        } else {
+            cpu.apu.channel_1.counter -= 1;
         }
-        cpu.apu.channel_1.counter -= 1;
     }
     if cpu.apu.channel_2.enabled && channel_2_length_enable {
         if cpu.apu.channel_2.counter == 0 {
             cpu.apu.channel_2.enabled = false;
+        } else {
+            cpu.apu.channel_2.counter -= 1;
         }
-        cpu.apu.channel_2.counter -= 1;
     }
 
     if cpu.apu.channel_3.enabled && channel_3_length_enable {
         if cpu.apu.channel_3.counter == 0 {
             cpu.apu.channel_3.enabled = false;
+        } else {
+            cpu.apu.channel_3.counter -= 1;
         }
-        cpu.apu.channel_3.counter -= 1;
     }
 
     if cpu.apu.channel_4.enabled && channel_4_length_enable {
         if cpu.apu.channel_4.counter == 0 {
             cpu.apu.channel_4.enabled = false;
+        } else {
+            cpu.apu.channel_4.counter -= 1;
         }
-        cpu.apu.channel_4.counter -= 1;
     }
 }
 
 #[allow(non_snake_case)]
-pub fn mix_channel_square(result: &mut Vec<i16>,
-                          channel: &mut SquareChannel,
-                          (duty_reg, freq_lo, freq_hi): (u8, u8, u8),
-                          (left_out, right_out): (u8, u8)) {
+pub fn mix_channel_square(
+    result: &mut Vec<i16>,
+    channel: &mut SquareChannel,
+    (duty_reg, freq_lo, freq_hi): (u8, u8, u8),
+    (left_out, right_out): (u8, u8),
+) {
     let time_freq = (freq_hi as u16 & 0b111) << 8 | freq_lo as u16;
     let duty = (duty_reg >> 6) as usize;
     let not_time_freq = 4 * (2048 - time_freq as u32);
@@ -238,32 +246,42 @@ pub fn mix_channel_square(result: &mut Vec<i16>,
     let volume_on = volume != 0;
     if volume_on {
         for x in 0..result.len() {
-            let est_wave_pos = cond!(init_freq as usize > not_time_freq as usize + x * downsample,
-                      init_wave,
-                      (init_wave +
-                       ((x * downsample + not_time_freq as usize - init_freq as usize) /
-                        not_time_freq as usize) as usize) % 8);
+            let est_wave_pos = cond!(
+                init_freq as usize > not_time_freq as usize + x * downsample,
+                init_wave,
+                (init_wave
+                    + ((x * downsample + not_time_freq as usize - init_freq as usize)
+                        / not_time_freq as usize) as usize)
+                    % 8
+            );
             let duty_low = duty_table[est_wave_pos] == 0;
             let sample = cond!(duty_low, -volume, volume);
             result[x] += sample;
         }
     }
-    channel.wave_pos = cond!(init_freq as usize > not_time_freq as usize + 8191,
-                             init_wave,
-                             (init_wave +
-                              ((8191 + not_time_freq as usize - init_freq as usize) /
-                               not_time_freq as usize) as usize) % 8);
-    channel.freq_pos = cond!(init_freq < 8192,
-                             (not_time_freq - (8192 - init_freq) % not_time_freq) % not_time_freq,
-                             init_freq - 8192);
+    channel.wave_pos = cond!(
+        init_freq as usize > not_time_freq as usize + 8191,
+        init_wave,
+        (init_wave
+            + ((8191 + not_time_freq as usize - init_freq as usize) / not_time_freq as usize)
+                as usize)
+            % 8
+    );
+    channel.freq_pos = cond!(
+        init_freq < 8192,
+        (not_time_freq - (8192 - init_freq) % not_time_freq) % not_time_freq,
+        init_freq - 8192
+    );
 }
 
 #[allow(non_snake_case)]
-pub fn mix_channel_3(result: &mut Vec<i16>,
-                     channel: &mut WaveChannel,
-                     wave_table: &[u8],
-                     registers: (u8, u8, u8, u8),
-                     (left_out, right_out): (u8, u8)) {
+pub fn mix_channel_3(
+    result: &mut Vec<i16>,
+    channel: &mut WaveChannel,
+    wave_table: &[u8],
+    registers: (u8, u8, u8, u8),
+    (left_out, right_out): (u8, u8),
+) {
     let (NR30, NR32, NR33, NR34) = registers;
     let time_freq = ((NR34 as u16 & 0b111) << 8) | NR33 as u16;
     let not_time_freq = 2 * (2048 - time_freq as u32);
@@ -280,12 +298,14 @@ pub fn mix_channel_3(result: &mut Vec<i16>,
         let init_wave = channel.wave_pos;
         for x in 0..result.len() {
             if volume_shift != 0 {
-                let est_wave_pos =
-                    cond!(init_freq as usize > not_time_freq as usize + x * downsample,
-                          init_wave,
-                          (init_wave +
-                           ((x * downsample + not_time_freq as usize - init_freq as usize) /
-                            not_time_freq as usize) as usize) % 32);
+                let est_wave_pos = cond!(
+                    init_freq as usize > not_time_freq as usize + x * downsample,
+                    init_wave,
+                    (init_wave
+                        + ((x * downsample + not_time_freq as usize - init_freq as usize)
+                            / not_time_freq as usize) as usize)
+                        % 32
+                );
                 let sample_cell = wave_table[est_wave_pos as usize / 2];
                 let sample_is_left = est_wave_pos & 1 == 0;
                 let sample = cond!(sample_is_left, sample_cell >> 4, sample_cell & 0x0F);
@@ -293,15 +313,19 @@ pub fn mix_channel_3(result: &mut Vec<i16>,
             }
         }
 
-        channel.wave_pos = cond!(init_freq as usize > not_time_freq as usize + 8191,
-                      init_wave,
-                      (init_wave +
-                       ((8191 + not_time_freq as usize - init_freq as usize) /
-                        not_time_freq as usize) as usize) % 32);
-        channel.freq_pos = cond!(init_freq < 8192,
-                                 (not_time_freq - (8192 - init_freq) % not_time_freq) %
-                                 not_time_freq,
-                                 init_freq - 8192);
+        channel.wave_pos = cond!(
+            init_freq as usize > not_time_freq as usize + 8191,
+            init_wave,
+            (init_wave
+                + ((8191 + not_time_freq as usize - init_freq as usize) / not_time_freq as usize)
+                    as usize)
+                % 32
+        );
+        channel.freq_pos = cond!(
+            init_freq < 8192,
+            (not_time_freq - (8192 - init_freq) % not_time_freq) % not_time_freq,
+            init_freq - 8192
+        );
     }
 }
 
@@ -447,7 +471,10 @@ pub fn step(cpu: &mut Cpu) {
 }
 
 fn get_duty_table() -> [u8; 32] {
-    [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0]
+    [
+        0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1,
+        1, 0,
+    ]
 }
 
 pub fn init_audio(freq: i32) -> sdl2::audio::AudioQueue<i16> {
@@ -462,7 +489,8 @@ pub fn init_audio(freq: i32) -> sdl2::audio::AudioQueue<i16> {
                         *        samples: Some(32768), // default sample size */
     };
 
-    let device = audio_subsystem.open_queue::<i16>(None, &desired_spec)
+    let device = audio_subsystem
+        .open_queue::<i16>(None, &desired_spec)
         .unwrap();
     device.resume();
     device
