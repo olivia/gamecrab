@@ -298,12 +298,8 @@ pub fn safe_write_address(address: usize, val: u8, cpu: &mut Cpu) -> () {
                 write_address(address - 0x2000, val, cpu)
             }
             0xFF00 => write_joypad(val, cpu),
-            0xFF01 => {
-                println!("Writing {:4>0X} to FF01", val);
-                write_address(address, val, cpu)
-            }
+            0xFF01 => write_address(address, val, cpu),
             0xFF02 => {
-                println!("Writing {:4>0X} to FF02", val);
                 if val & 0x81 == 0x81 {
                     // initiate transfer using internal clock, this takes 4096 cycles
                     cpu.serial_transfer_timer = 4096;

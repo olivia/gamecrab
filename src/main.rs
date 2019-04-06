@@ -47,7 +47,7 @@ fn run_rom() {
         .unwrap();
 
     cpu.load_bootrom("DMG_ROM.bin");
-    cpu.load_cart("aaa.gb");
+    cpu.load_cart("a.gb");
     let factory = window.factory.clone();
     let font = "FiraSans-Regular.ttf";
     let mut texture_settings = TextureSettings::new();

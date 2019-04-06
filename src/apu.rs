@@ -336,7 +336,7 @@ pub fn mix_channel_4(result: &mut Vec<i16>, channel: &mut NoiseChannel, nr43: u8
     let divisors = [8, 16, 32, 48, 64, 80, 96, 112];
     let dividing_ratio = divisors[(nr43 & 0x7) as usize];
     let shift_clock_freq = nr43 >> 4 as u32;
-    let timer_freq = dividing_ratio << shift_clock_freq;
+    let timer_freq = dividing_ratio << shift_clock_freq as u32;
     let volume_step = match left_out + right_out {
         2 => (1 << 9),
         1 => (1 << 8),
@@ -345,33 +345,34 @@ pub fn mix_channel_4(result: &mut Vec<i16>, channel: &mut NoiseChannel, nr43: u8
     } as i16;
     let volume_init = channel.volume as i16;
     let volume = volume_step * volume_init;
-    let half_width = nr43 & 0x08 != 0; // whether the shift register is 15bits of 7 bits
+    let half_width = nr43 & 0x08 != 0; // whether the shift register is 15bits or 7 bits
     if shift_clock_freq < 14 && timer_freq as u32 != 0 {
         let downsample = 1 + 8192 / result.len();
-        let mut freq = channel.freq_pos;
-        let mut sample_idx = 0;
-        for x in 0..8192 {
-            // cycles
-            if freq == 0 {
-                freq = timer_freq;
-                let lfsr = channel.lfsr;
-                // Even though the documentation says that it should use the lower two bits, this sounds more accurate :/
-                let tap_shift = cond!(half_width, 0, 0);
-                let new_bit = ((lfsr ^ (lfsr >> 1)) >> tap_shift) & 1;
-                let part_res = (new_bit << 14) | (lfsr >> 1);
-                channel.lfsr = if half_width {
-                    (part_res & (0x7FFF - 0x0040)) | (new_bit << 6)
-                } else {
-                    part_res
-                };
-            }
-            freq -= 1;
-            if volume != 0 && x % downsample == 0 {
-                result[sample_idx] += cond!((channel.lfsr & 1) == 0, volume, -volume);
-                sample_idx += 1;
+        let freq = channel.freq_pos;
+        let mut lfsrArr = vec![0; (8192 / timer_freq) + 1];
+        lfsrArr[0] = channel.lfsr;
+        for x in 1..lfsrArr.len() {
+            let lfsr = lfsrArr[x - 1];
+            let shifted = lfsr >> 1;
+            let new_bit = (lfsr ^ shifted) & 1;
+            let width_bit = cond!(half_width, 0x4040, 0x4000);
+            lfsrArr[x] = if new_bit == 1 {
+                shifted | width_bit
+            } else {
+                shifted & !width_bit
+            };
+            channel.lfsr = lfsrArr[x];
+        }
+
+        if volume != 0 {
+            for x in 0..(8192 / downsample) {
+                let realFreq = x * downsample;
+                let lsfrIdx = realFreq / (timer_freq as usize);
+                result[x] += cond!((lfsrArr[lsfrIdx] & 1) == 0, volume, -volume);
             }
         }
-        channel.freq_pos = freq;
+        channel.freq_pos =
+            (timer_freq as u32 + freq - (8192 % timer_freq as u32)) % timer_freq as u32;
     }
 }
 

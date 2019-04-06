@@ -11,5 +11,7 @@ time = "0.1"
 sdl2 = "0.29"
 nfd = { git = "https://github.com/saurvs/nfd-rs.git" }
 
+[profile.release]
+
 [profile.dev]
 debug = true
