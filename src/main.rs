@@ -1,16 +1,17 @@
+extern crate fps_counter;
 extern crate gamecrab;
 extern crate image;
 extern crate piston_window;
-extern crate fps_counter;
 extern crate time;
-use piston_window::*;
-use piston_window::texture::Filter;
+use self::image::{ImageBuffer, Rgba};
 use fps_counter::*;
-use gamecrab::{apu, cpu, opcode, instr, interrupt, keyboard, lcd, ppu};
+use gamecrab::{apu, cpu, instr, interrupt, keyboard, lcd, opcode, ppu};
+use piston_window::texture::Filter;
+use piston_window::*;
 
-fn get_gameboy_canvas(scale: u32) -> (u32, u32, image::ImageBuffer<image::Rgba<u8>, Vec<u8>>) {
+fn get_gameboy_canvas(scale: u32) -> (u32, u32, ImageBuffer<Rgba<u8>, Vec<u8>>) {
     let (width, height) = (160, 144);
-    let mut canvas = image::ImageBuffer::new(width, height);
+    let mut canvas = ImageBuffer::new(width, height);
     for (_, _, pixel) in canvas.enumerate_pixels_mut() {
         *pixel = image::Rgba([0, 0, 0, 255]);
     }
@@ -46,13 +47,13 @@ fn run_rom() {
         .unwrap();
 
     cpu.load_bootrom("DMG_ROM.bin");
-    cpu.load_cart("a.gb");
+    cpu.load_cart("aaa.gb");
     let factory = window.factory.clone();
     let font = "FiraSans-Regular.ttf";
-    let mut glyphs = Glyphs::new(font, factory).unwrap();
     let mut texture_settings = TextureSettings::new();
     texture_settings.set_filter(Filter::Nearest);
     let mut texture = Texture::from_image(&mut window.factory, &canvas, &texture_settings).unwrap();
+    let mut glyphs = Glyphs::new(font, factory, texture_settings).unwrap();
     let mut frame = canvas;
     let mut mod_cycles = 0;
     let mut frame_mod_cycles = 0;
@@ -64,6 +65,7 @@ fn run_rom() {
     let mut apu_mod_cycles = 0;
     let mut start_updating = false;
     window.set_max_fps(60);
+    window.set_ups(512);
     while let Some(e) = window.next() {
         if let Some(Button::Keyboard(key)) = e.press_args() {
             keyboard::handle_keypress(key, &mut cpu);
@@ -204,9 +206,7 @@ fn run_rom() {
             if !start_updating {
                 continue;
             }
-            if cpu.cart_loaded {
-                window.set_ups(512);
-            }
+            if cpu.cart_loaded {}
             let lcd_power_on = lcd::LCDC::Power.is_set(&mut cpu);
             if lcd_power_on && frame_mod_cycles > frame_cycles {
                 frame_mod_cycles %= frame_cycles;
@@ -217,28 +217,30 @@ fn run_rom() {
 
                 clear([1.0; 4], g);
                 image(&texture, c.transform.scale(scale as f64, scale as f64), g);
-                text::Text::new_color([0.0, 1.0, 1.0, 1.0], 32).draw(&counter.tick().to_string(),
-                                                                     &mut glyphs,
-                                                                     &c.draw_state,
-                                                                     transform,
-                                                                     g);
+                text::Text::new_color([0.0, 1.0, 1.0, 1.0], 32).draw(
+                    &counter.tick().to_string(),
+                    &mut glyphs,
+                    &c.draw_state,
+                    transform,
+                    g,
+                );
 
-                text::Text::new_color([0.0, 1.0, 1.0, 1.0], 32)
-                    .draw(&(format!("BG: {:?}, W: {:?}, S: {:?}",
-                                    cpu.background_mode,
-                                    cpu.window_mode,
-                                    cpu.sprite_mode)),
-                          &mut glyphs,
-                          &c.draw_state,
-                          c.transform.trans(50.0, 30.0),
-                          g);
+                text::Text::new_color([0.0, 1.0, 1.0, 1.0], 32).draw(
+                    &(format!(
+                        "BG: {:?}, W: {:?}, S: {:?}",
+                        cpu.background_mode, cpu.window_mode, cpu.sprite_mode
+                    )),
+                    &mut glyphs,
+                    &c.draw_state,
+                    c.transform.trans(50.0, 30.0),
+                    g,
+                );
             });
         }
     }
-
 }
 
 fn main() {
     run_rom();
-    // disassemble_rom(0xB7, 100);
-}
+} //d
+  // disassemble_rom(0xB7, 100);

@@ -1,11 +1,14 @@
 extern crate image;
+use self::image::{ImageBuffer, Rgba};
 use cpu::*;
 use lcd::*;
 
-pub fn render_scanline(ly: u8,
-                       screen_buffer: &mut [u8; 256 * 256],
-                       canvas: &mut image::ImageBuffer<image::Rgba<u8>, Vec<u8>>,
-                       cpu: &mut Cpu) {
+pub fn render_scanline(
+    ly: u8,
+    screen_buffer: &mut [u8; 256 * 256],
+    canvas: &mut ImageBuffer<Rgba<u8>, Vec<u8>>,
+    cpu: &mut Cpu,
+) {
     if ly > 143 {
         return;
     }
@@ -39,18 +42,22 @@ pub fn write_background_line(ly: u8, buffer: &mut [u8; 256 * 256], cpu: &mut Cpu
             let tile_x = (256 + 8 * (offset % 32) - scroll_x) % 256;
             // Skip painting the tiles that are not visible
             if tile_x <= 160 || tile_x >= 248 {
-                let tile_num = cond!(LCDC::Tileset.is_set(cpu),
-                    read_address(start + offset, cpu) as usize,                    
-                    (128 as i16 + read_address_i8(start + offset, cpu) as i16) as usize);
+                let tile_num = cond!(
+                    LCDC::Tileset.is_set(cpu),
+                    read_address(start + offset, cpu) as usize,
+                    (128 as i16 + read_address_i8(start + offset, cpu) as i16) as usize
+                );
 
-                write_bg_tile_line(ly,
-                                   tile_num,
-                                   tile_x as usize,
-                                   tile_y as usize,
-                                   tile_map_start,
-                                   0xFF47,
-                                   buffer,
-                                   cpu);
+                write_bg_tile_line(
+                    ly,
+                    tile_num,
+                    tile_x as usize,
+                    tile_y as usize,
+                    tile_map_start,
+                    0xFF47,
+                    buffer,
+                    cpu,
+                );
             }
         }
     } else {
@@ -67,17 +74,20 @@ pub fn write_window_line(ly: u8, buffer: &mut [u8; 256 * 256], cpu: &mut Cpu) {
         if ly as usize >= scroll_y {
             let start_offset = (32 * ((ly as usize - scroll_y) / 8)) as usize;
             for offset in start_offset..(32 + start_offset) {
-                let tile_num = cond!(LCDC::Tileset.is_set(cpu),
-                                     read_address(start + offset, cpu) as usize,
-
-                                     (128 + read_address_i8(start + offset, cpu) as i16) as usize);
-                write_window_tile_line(ly,
-                                       tile_num,
-                                       8 * (offset as isize % 32) + scroll_x as isize - 7,
-                                       8 * (offset as isize / 32) + scroll_y as isize,
-                                       tile_map_start,
-                                       buffer,
-                                       cpu);
+                let tile_num = cond!(
+                    LCDC::Tileset.is_set(cpu),
+                    read_address(start + offset, cpu) as usize,
+                    (128 + read_address_i8(start + offset, cpu) as i16) as usize
+                );
+                write_window_tile_line(
+                    ly,
+                    tile_num,
+                    8 * (offset as isize % 32) + scroll_x as isize - 7,
+                    8 * (offset as isize / 32) + scroll_y as isize,
+                    tile_map_start,
+                    buffer,
+                    cpu,
+                );
             }
         }
     } else {
@@ -95,9 +105,11 @@ pub fn write_sprites_line(ly: u8, buffer: &mut [u8; 256 * 256], cpu: &mut Cpu) {
                 continue;
             } // sprite is off screen
 
-            let (x, tile_num, sprite_flag) = (read_address(address + 1, cpu) as isize,
-                                              read_address(address + 2, cpu) as usize,
-                                              read_address(address + 3, cpu));
+            let (x, tile_num, sprite_flag) = (
+                read_address(address + 1, cpu) as isize,
+                read_address(address + 2, cpu) as usize,
+                read_address(address + 3, cpu),
+            );
             let pallette_address = cond!(sprite_flag & 0x10 == 0, 0xFF48, 0xFF49);
             let h_flip = (sprite_flag & 0b00100000) != 0;
             let v_flip = (sprite_flag & 0b01000000) != 0;
@@ -109,15 +121,17 @@ pub fn write_sprites_line(ly: u8, buffer: &mut [u8; 256 * 256], cpu: &mut Cpu) {
             }
 
             if square_sprites {
-                write_sprite_tile_line(ly as usize,
-                                       tile_num,
-                                       x - 8,
-                                       y - 16,
-                                       pallette_address,
-                                       h_flip,
-                                       v_flip,
-                                       buffer,
-                                       cpu);
+                write_sprite_tile_line(
+                    ly as usize,
+                    tile_num,
+                    x - 8,
+                    y - 16,
+                    pallette_address,
+                    h_flip,
+                    v_flip,
+                    buffer,
+                    cpu,
+                );
             } else {
                 let (tile_hi, tile_lo) = if v_flip {
                     (tile_num | 0x01, tile_num & 0xFE)
@@ -126,39 +140,45 @@ pub fn write_sprites_line(ly: u8, buffer: &mut [u8; 256 * 256], cpu: &mut Cpu) {
                 };
 
                 if (ly as isize) < (y - 8) {
-                    write_sprite_tile_line(ly as usize,
-                                           tile_hi,
-                                           x - 8,
-                                           y - 16,
-                                           pallette_address,
-                                           h_flip,
-                                           v_flip,
-                                           buffer,
-                                           cpu);
+                    write_sprite_tile_line(
+                        ly as usize,
+                        tile_hi,
+                        x - 8,
+                        y - 16,
+                        pallette_address,
+                        h_flip,
+                        v_flip,
+                        buffer,
+                        cpu,
+                    );
                 } else {
-                    write_sprite_tile_line(ly as usize,
-                                           tile_lo,
-                                           x - 8,
-                                           y - 8,
-                                           pallette_address,
-                                           h_flip,
-                                           v_flip,
-                                           buffer,
-                                           cpu);
+                    write_sprite_tile_line(
+                        ly as usize,
+                        tile_lo,
+                        x - 8,
+                        y - 8,
+                        pallette_address,
+                        h_flip,
+                        v_flip,
+                        buffer,
+                        cpu,
+                    );
                 }
             }
         }
     }
 }
 
-pub fn write_bg_tile_line(ly: u8,
-                          tile_num: usize,
-                          x: usize,
-                          y: usize,
-                          tile_map_start: usize,
-                          pallette_address: usize,
-                          buffer: &mut [u8; 256 * 256],
-                          cpu: &mut Cpu) {
+pub fn write_bg_tile_line(
+    ly: u8,
+    tile_num: usize,
+    x: usize,
+    y: usize,
+    tile_map_start: usize,
+    pallette_address: usize,
+    buffer: &mut [u8; 256 * 256],
+    cpu: &mut Cpu,
+) {
     let address_start = tile_map_start + 16 * tile_num;
     let row = (256 + ly as usize - y) % 256;
     let left_line = read_address(address_start + row * 2, cpu) as u16;
@@ -168,8 +188,8 @@ pub fn write_bg_tile_line(ly: u8,
 
     for col in 0..8 {
         let pos_offset = 7 - col;
-        let color_map_idx = ((right_line >> pos_offset & 1) << 1) as u8 |
-                            (left_line >> pos_offset & 1) as u8;
+        let color_map_idx =
+            ((right_line >> pos_offset & 1) << 1) as u8 | (left_line >> pos_offset & 1) as u8;
         let color_idx = lookup_color_idx(pallette_address, color_map_idx, cpu);
         let x_idx = (x + col) % 256;
         let buffer_idx = buffer_start + x_idx;
@@ -177,15 +197,17 @@ pub fn write_bg_tile_line(ly: u8,
     }
 }
 
-pub fn write_sprite_tile_line(ly: usize,
-                              tile_num: usize,
-                              x: isize,
-                              y: isize,
-                              pallette_address: usize,
-                              h_flip: bool,
-                              v_flip: bool,
-                              buffer: &mut [u8; 256 * 256],
-                              cpu: &mut Cpu) {
+pub fn write_sprite_tile_line(
+    ly: usize,
+    tile_num: usize,
+    x: isize,
+    y: isize,
+    pallette_address: usize,
+    h_flip: bool,
+    v_flip: bool,
+    buffer: &mut [u8; 256 * 256],
+    cpu: &mut Cpu,
+) {
     use std::cmp;
     let tile_map_start = 0x8000;
     let start_col = cmp::min(8, cmp::max(0, -x)) as usize;
@@ -207,13 +229,15 @@ pub fn write_sprite_tile_line(ly: usize,
     }
 }
 
-pub fn write_window_tile_line(ly: u8,
-                              tile_num: usize,
-                              x: isize,
-                              y: isize,
-                              tile_map_start: usize,
-                              buffer: &mut [u8; 256 * 256],
-                              cpu: &mut Cpu) {
+pub fn write_window_tile_line(
+    ly: u8,
+    tile_num: usize,
+    x: isize,
+    y: isize,
+    tile_map_start: usize,
+    buffer: &mut [u8; 256 * 256],
+    cpu: &mut Cpu,
+) {
     use std::cmp;
     let start_col = cmp::min(8, cmp::max(0, -x)) as usize;
     let end_col = cmp::max(0, cmp::min(8, 255 - x)) as usize;
@@ -228,10 +252,11 @@ pub fn write_window_tile_line(ly: u8,
     let right_line = read_address(address_start + row * 2 + 1, cpu);
 
     for col in start_col..end_col {
-        let color_idx = lookup_color_idx(0xFF47,
-                                         ((right_line >> (7 - col) & 1) << 1) as u8 +
-                                         (left_line >> (7 - col) & 1) as u8,
-                                         cpu);
+        let color_idx = lookup_color_idx(
+            0xFF47,
+            ((right_line >> (7 - col) & 1) << 1) as u8 + (left_line >> (7 - col) & 1) as u8,
+            cpu,
+        );
         buffer[(ly as usize) * 256 + (x + col as isize) as usize] = color_idx;
     }
 }
@@ -240,17 +265,21 @@ pub fn lookup_color_idx(address: usize, pallete_idx: u8, cpu: &mut Cpu) -> u8 {
     (read_address(address, cpu) >> (pallete_idx * 2)) & 0b11
 }
 
-pub fn buffer_to_image_buffer(canvas: &mut image::ImageBuffer<image::Rgba<u8>, Vec<u8>>,
-                              buffer: &mut [u8; 256 * 256]) {
+pub fn buffer_to_image_buffer(
+    canvas: &mut image::ImageBuffer<image::Rgba<u8>, Vec<u8>>,
+    buffer: &mut [u8; 256 * 256],
+) {
     for (x, y, pixel) in canvas.enumerate_pixels_mut() {
         let idx = x + 256 * y;
         *pixel = get_color(buffer[idx as usize]);
     }
 }
 
-pub fn buffer_line_to_image_buffer(line_num: u8,
-                                   canvas: &mut image::ImageBuffer<image::Rgba<u8>, Vec<u8>>,
-                                   buffer: &mut [u8; 256 * 256]) {
+pub fn buffer_line_to_image_buffer(
+    line_num: u8,
+    canvas: &mut image::ImageBuffer<image::Rgba<u8>, Vec<u8>>,
+    buffer: &mut [u8; 256 * 256],
+) {
     let (width, _) = canvas.dimensions();
     for x in 0..width {
         let idx = x as usize + 256 * (line_num as usize);
